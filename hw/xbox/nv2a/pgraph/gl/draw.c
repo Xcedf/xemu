@@ -149,6 +149,7 @@ void pgraph_gl_draw_begin(NV2AState *d)
     bool stencil_test =
         pgraph_reg_r(pg, NV_PGRAPH_CONTROL_1) & NV_PGRAPH_CONTROL_1_STENCIL_TEST_ENABLE;
     bool is_nop_draw = !(color_write || depth_test || stencil_test);
+    bool z_perspective = control_0 & NV_PGRAPH_CONTROL_0_Z_PERSPECTIVE_ENABLE;
 
     pgraph_gl_surface_update(d, true, true, depth_test || stencil_test);
 
@@ -203,10 +204,6 @@ void pgraph_gl_draw_begin(NV2AState *d)
         glDisable(GL_CULL_FACE);
     }
 
-    /* Clipping */
-    glEnable(GL_CLIP_DISTANCE0);
-    glEnable(GL_CLIP_DISTANCE1);
-
     /* Front-face select */
     glFrontFace(pgraph_reg_r(pg, NV_PGRAPH_SETUPRASTER)
                     & NV_PGRAPH_SETUPRASTER_FRONTFACE
@@ -241,6 +238,10 @@ void pgraph_gl_draw_begin(NV2AState *d)
         uint32_t zbias_u32 = pgraph_reg_r(pg, NV_PGRAPH_ZOFFSETBIAS);
         GLfloat zbias = *(float*)&zbias_u32;
         glPolygonOffset(zfactor, zbias);
+        // TODO: emulate zfactor when z_perspective true, i.e. w-buffering
+        pg->fragment_depth_offset = zbias;
+    } else {
+        pg->fragment_depth_offset = 0.0f;
     }
 
     /* Depth testing */
@@ -261,6 +262,11 @@ void pgraph_gl_draw_begin(NV2AState *d)
         glEnable(GL_DEPTH_CLAMP);
     } else {
         glDisable(GL_DEPTH_CLAMP);
+        /*if (z_perspective) {
+            glEnable(GL_DEPTH_CLAMP);
+        } else {
+            glDisable(GL_DEPTH_CLAMP);
+        }*/
     }
 
     if (GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_CONTROL_3),
@@ -384,6 +390,7 @@ void pgraph_gl_draw_end(NV2AState *d)
     bool stencil_test =
         pgraph_reg_r(pg, NV_PGRAPH_CONTROL_1) & NV_PGRAPH_CONTROL_1_STENCIL_TEST_ENABLE;
     bool is_nop_draw = !(color_write || depth_test || stencil_test);
+    bool z_perspective = control_0 & NV_PGRAPH_CONTROL_0_Z_PERSPECTIVE_ENABLE;
 
     if (is_nop_draw) {
         // FIXME: Check PGRAPH register 0x880.

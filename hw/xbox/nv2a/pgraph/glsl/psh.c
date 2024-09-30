@@ -589,7 +589,7 @@ static const char *get_sampler_type(enum PS_TEXTUREMODES mode, const PshState *s
             fprintf(stderr, "Shadow map support not implemented for mode %d\n", mode);
             assert(!"Shadow map support not implemented for this mode");
         }
-        assert(state->dim_tex[i] == 2);
+        //assert(state->dim_tex[i] == 2);
         return sampler2D;
 
     case PS_TEXTUREMODES_PROJECT3D:
@@ -724,7 +724,7 @@ static void apply_convolution_filter(const struct PixelShader *ps, MString *vars
         "}\n", tex, tex, tex, tex, tex_remap, tex);
 }
 
-static MString* psh_convert(struct PixelShader *ps)
+static MString* psh_convert(struct PixelShader *ps, bool z_perspective)
 {
     int i;
 
@@ -1236,7 +1236,7 @@ static void parse_combiner_output(uint32_t value, struct OutputInfo *out)
     out->cd_alphablue = flags & 0x40;
 }
 
-MString *pgraph_gen_psh_glsl(const PshState state)
+MString *pgraph_gen_psh_glsl(const PshState state, bool z_perspective)
 {
     int i;
     struct PixelShader ps;
@@ -1286,5 +1286,5 @@ MString *pgraph_gen_psh_glsl(const PshState state)
         ps.final_input.inv_r0 = flags & PS_FINALCOMBINERSETTING_COMPLEMENT_R0;
     }
 
-    return psh_convert(&ps);
+    return psh_convert(&ps, z_perspective);
 }

@@ -277,6 +277,8 @@ static void update_shader_constant_locations(ShaderBinding *binding)
         uniform_index(&binding->vertex->uniforms, "surfaceSize");
     binding->clip_range_loc =
         uniform_index(&binding->vertex->uniforms, "clipRange");
+    binding->depth_offset_loc =
+        uniform_index(&binding->vertex->uniforms, "depthOffset");
     binding->fog_param_loc =
         uniform_index(&binding->vertex->uniforms, "fogParam");
 
@@ -414,7 +416,7 @@ static ShaderBinding *gen_shaders(PGRAPHState *pg, ShaderState *state)
             mstring_get_str(vertex_shader_code));
         mstring_unref(vertex_shader_code);
 
-        MString *fragment_shader_code = pgraph_gen_psh_glsl(state->psh);
+        MString *fragment_shader_code = pgraph_gen_psh_glsl(state->psh, state->z_perspective);
         NV2A_VK_DPRINTF("fragment shader: \n%s",
                         mstring_get_str(fragment_shader_code));
         snode->fragment = pgraph_vk_create_shader_module_from_glsl(
@@ -644,10 +646,15 @@ static void shader_update_constants(PGRAPHState *pg, ShaderBinding *binding,
         uint32_t v[2];
         v[0] = pgraph_reg_r(pg, NV_PGRAPH_ZCLIPMIN);
         v[1] = pgraph_reg_r(pg, NV_PGRAPH_ZCLIPMAX);
-        float zclip_min = *(float *)&v[0] / zmax * 2.0 - 1.0;
-        float zclip_max = *(float *)&v[1] / zmax * 2.0 - 1.0;
+        float zclip_min = *(float *)&v[0]; // zmax * 2.0 - 1.0;
+        float zclip_max = *(float *)&v[1]; // zmax * 2.0 - 1.0;
         uniform4f(&binding->vertex->uniforms, binding->clip_range_loc, 0,
                          zmax, zclip_min, zclip_max);
+    }
+
+    if (binding->depth_offset_loc != -1) {
+        uniform1f(&binding->vertex->uniforms, binding->depth_offset_loc,
+                  pg->fragment_depth_offset);
     }
 
     /* Clipping regions */
