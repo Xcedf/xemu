@@ -239,6 +239,7 @@ typedef struct PGRAPHState {
     QemuCond framebuffer_released;
 
     unsigned int surface_scale_factor;
+    float fragment_depth_offset;
     uint8_t *scale_buf;
 
     const PGRAPHRenderer *renderer;
