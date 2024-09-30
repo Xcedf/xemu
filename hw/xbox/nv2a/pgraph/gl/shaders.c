@@ -157,6 +157,7 @@ static void update_shader_constant_locations(ShaderBinding *binding, const Shade
     }
     binding->surface_size_loc = glGetUniformLocation(binding->gl_program, "surfaceSize");
     binding->clip_range_loc = glGetUniformLocation(binding->gl_program, "clipRange");
+    binding->depth_offset_loc = glGetUniformLocation(binding->gl_program, "depthOffset");
     binding->fog_color_loc = glGetUniformLocation(binding->gl_program, "fogColor");
     binding->fog_param_loc = glGetUniformLocation(binding->gl_program, "fogParam");
 
@@ -240,7 +241,7 @@ static ShaderBinding *generate_shaders(const ShaderState *state)
     mstring_unref(vertex_shader_code);
 
     /* generate a fragment shader from register combiners */
-    MString *fragment_shader_code = pgraph_gen_psh_glsl(state->psh);
+    MString *fragment_shader_code = pgraph_gen_psh_glsl(state->psh, state->z_perspective);
     const char *fragment_shader_code_str =
         mstring_get_str(fragment_shader_code);
     GLuint fragment_shader = create_gl_shader(GL_FRAGMENT_SHADER,
@@ -899,9 +900,13 @@ static void shader_update_constants(PGRAPHState *pg, ShaderBinding *binding,
         uint32_t v[2];
         v[0] = pgraph_reg_r(pg, NV_PGRAPH_ZCLIPMIN);
         v[1] = pgraph_reg_r(pg, NV_PGRAPH_ZCLIPMAX);
-        float zclip_min = *(float*)&v[0] / zmax * 2.0 - 1.0;
-        float zclip_max = *(float*)&v[1] / zmax * 2.0 - 1.0;
+        float zclip_min = *(float*)&v[0]; // zmax * 2.0 - 1.0;
+        float zclip_max = *(float*)&v[1]; // zmax * 2.0 - 1.0;
         glUniform4f(binding->clip_range_loc, 0, zmax, zclip_min, zclip_max);
+    }
+
+    if (binding->depth_offset_loc != -1) {
+        glUniform1f(binding->depth_offset_loc, pg->fragment_depth_offset);
     }
 
     /* Clipping regions */
