@@ -262,6 +262,10 @@ MString *pgraph_gen_vsh_glsl(const ShaderState *state, bool prefix_outputs)
                       "  vtxT3 = FixNaN(oT3, xyzw) * vtx_inv_w;\n"
                       "  gl_Position = oPos;\n"
                       "  gl_PointSize = oPts.x;\n"
+                      "  float near = clipRange.z/clipRange.y * 2.0 - 1.0;\n"
+                      "  float far = clipRange.w/clipRange.y * 2.0 - 1.0;\n"
+                      "  gl_ClipDistance[0] = oPos.z - oPos.w*near;\n" // Near
+                      "  gl_ClipDistance[1] = oPos.w*far - oPos.z;\n" // Far
                       // "  gl_ClipDistance[0] = oPos.z - oPos.w*clipRange.z;\n" // Near
                       // "  gl_ClipDistance[1] = oPos.w*clipRange.w - oPos.z;\n" // Far
                       "\n"
