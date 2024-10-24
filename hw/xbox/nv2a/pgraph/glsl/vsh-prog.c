@@ -847,9 +847,12 @@ void pgraph_gen_vsh_prog_glsl(uint16_t version,
         mstring_append(body, 
             //"  oPos.y = -2.0 * (oPos.y - surfaceSize.y * 0.5) / surfaceSize.y;\n"
             "  oPos.y *= -1;\n"
-            "  oPos.z = (oPos.z - clipRange.z)/(0.5*(clipRange.w - clipRange.z)) - 1;\n"
+            //"  oPos.z = (oPos.z - clipRange.z)/(0.5*(clipRange.w - clipRange.z)) - 1;\n"
         );
     }
+
+    mstring_append(body, 
+        "  oPos.z = (oPos.z - clipRange.z)/(0.5*(clipRange.w - clipRange.z)) - 1;\n");
 
     mstring_append(body,
         "  if (oPos.w < 0.0) {\n"
