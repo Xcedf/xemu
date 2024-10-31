@@ -447,6 +447,46 @@ void MainMenuInputView::Draw()
            "Capture even if window is unfocused (requires restart)");
 }
 
+void DrawFPS()
+{
+    const float DISTANCE = 10.0f;
+    static int corner = 0;
+    ImGuiIO &io = ImGui::GetIO();
+    if (corner != -1) {
+        ImVec2 window_pos =
+            ImVec2((corner & 1) ? io.DisplaySize.x - DISTANCE : DISTANCE,
+                   (corner & 2) ? io.DisplaySize.y - DISTANCE : DISTANCE);
+        window_pos.y = g_main_menu_height + DISTANCE;
+        ImVec2 window_pos_pivot =
+            ImVec2((corner & 1) ? 1.0f : 0.0f, (corner & 2) ? 1.0f : 0.0f);
+        ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
+    }
+
+    float fade = 1.0;
+
+    ImVec4 color = ImGui::GetStyle().Colors[ImGuiCol_ButtonActive];
+    color.w *= fade;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1);
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0, 0, 0, fade * 0.9f));
+    ImGui::PushStyleColor(ImGuiCol_Border, color);
+    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    ImGui::SetNextWindowBgAlpha(0.90f * fade);
+    if (ImGui::Begin("FPSOverlay", NULL,
+                     ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoDecoration |
+                         ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoFocusOnAppearing |
+                         ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs)) {
+        ImGui::Text("FPS %d", g_nv2a_stats.increment_fps);
+    }
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    ImGui::End();
+}
+
 void MainMenuDisplayView::Draw()
 {
     SectionTitle("Renderer");
@@ -501,6 +541,8 @@ void MainMenuDisplayView::Draw()
     SectionTitle("Interface");
     Toggle("Show main menu bar", &g_config.display.ui.show_menubar,
            "Show main menu bar when mouse is activated");
+    Toggle("Show framerate", &g_config.display.ui.show_fps,
+           "Enable / Disable the basic FPS monitor");
     Toggle("Show notifications", &g_config.display.ui.show_notifications,
            "Display notifications in upper-right corner");
     Toggle("Hide mouse cursor", &g_config.display.ui.hide_cursor,
