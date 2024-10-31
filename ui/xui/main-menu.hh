@@ -50,6 +50,8 @@ public:
     void Draw() override;
 };
 
+void DrawFPS();
+
 class MainMenuDisplayView : public virtual MainMenuTabView
 {
 public:
