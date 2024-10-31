@@ -223,6 +223,10 @@ void xemu_hud_render(void)
     }
 #endif
 
+    if (g_config.display.ui.show_fps) {
+        DrawFPS();
+    }
+
     if (g_config.display.ui.show_menubar && !first_boot_window.is_open) {
         // Auto-hide main menu after 5s of inactivity
         static uint32_t last_check = 0;
