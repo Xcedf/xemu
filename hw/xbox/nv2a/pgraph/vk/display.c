@@ -895,7 +895,6 @@ static void update_uniforms(PGRAPHState *pg, SurfaceBinding *surface)
 
 static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
 {
-    NV2AState *d = container_of(pg, NV2AState, pgraph);
     PGRAPHVkState *r = pg->vk_renderer_state;
     PGRAPHVkDisplayState *disp = &r->display;
 
@@ -908,8 +907,6 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
         pgraph_vk_finish(pg, VK_FINISH_REASON_PRESENTING);
     }
 
-    pgraph_vk_upload_surface_data(d, surface, !tcg_enabled());
-
     disp->pvideo.state = get_pvideo_state(pg);
     if (disp->pvideo.state.enabled) {
         upload_pvideo_image(pg, disp->pvideo.state);
@@ -919,8 +916,6 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
     update_descriptor_set(pg, surface);
 
     VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg);
-    pgraph_vk_begin_debug_marker(r, cmd, RGBA_YELLOW,
-        "Display Surface %08"HWADDR_PRIx);
 
     pgraph_vk_transition_image_layout(pg, cmd, surface->image,
                                       surface->host_fmt.vk_format,
@@ -996,7 +991,6 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    pgraph_vk_end_debug_marker(r, cmd);
     pgraph_vk_end_single_time_commands(pg, cmd);
     nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_5);
 
