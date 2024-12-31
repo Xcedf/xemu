@@ -651,7 +651,7 @@ static void shader_update_constants(PGRAPHState *pg, ShaderBinding *binding,
 
     if (binding->clip_range_loc != -1) {       
         uniform4f(&binding->vertex->uniforms, binding->clip_range_loc, 0,
-                         zmax, zclip_min, zclip_max);
+                         zclip_max, zclip_min, zclip_max);
     }
 
     if (binding->clip_range_loc_frag != -1) {
