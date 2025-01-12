@@ -799,6 +799,7 @@ void pgraph_gen_vsh_prog_glsl(uint16_t version,
                    const uint32_t *tokens,
                    unsigned int length,
                    bool z_perspective,
+                   bool texture,
                    bool vulkan,
                    MString *header, MString *body)
 {
@@ -836,8 +837,6 @@ void pgraph_gen_vsh_prog_glsl(uint16_t version,
         "  } else {\n"
         "    oPos.w = clamp(oPos.w, 5.421011e-20, 1.884467e+019);\n"
         "  }\n"
-        "  vtx_inv_w = 1.0 / oPos.w;\n"
-        "  vtx_inv_w_flat = vtx_inv_w;\n"
     );
 
     mstring_append(body,
@@ -862,19 +861,40 @@ void pgraph_gen_vsh_prog_glsl(uint16_t version,
 
     mstring_append(body,
         "  if (clipRange.y != clipRange.x) {\n");
-    if (vulkan) {
-        mstring_append(body, "    oPos.z = (oPos.z - clipRange.z)/(clipRange.w - clipRange.z);\n");
-    } else {
+    if (texture) {  
+        if (z_perspective) {
+            if (vulkan) {
+                mstring_append(body, "    oPos.z = (oPos.z - clipRange.z)/(clipRange.w - clipRange.z);\n");
+            } else {
+                mstring_append(body, "    oPos.z = (oPos.z - clipRange.z)/(0.5*(clipRange.w - clipRange.z)) - 1;\n");
+            }
+        } else {
+            /* There is some clip distance / clip range issue here; if using x and y as near and far planes,
+             * character shadows in many games get clipped (e.g. Conker, Halo CE, Wallace & Gromit), 
+             * and using z and w as near and far planes restores them but the Xbox dashboard background 
+             * gets clipped. Set / disable gl_clipDistance? ( x = 0, y = zmax, z = zclipmin, w = zclipmax ) */
+            if (vulkan) {
+                mstring_append(body, "    oPos.z = (oPos.z - clipRange.x)/(clipRange.y - clipRange.x);\n");
+            } else {
+                mstring_append(body, "    oPos.z = (oPos.z - clipRange.x)/(0.5*(clipRange.y - clipRange.x)) - 1;\n");
+            }
+        }
         mstring_append(body,
-                       "    oPos.z = (oPos.z - clipRange.z)/(0.5*(clipRange.w "
-                       "- clipRange.z)) - 1;\n");
-    }
-    mstring_append(body,
-        "  }\n"
-    );  
-    if(z_perspective) {
+            "  }\n"
+        );  
+    
         mstring_append(body, "  oPos.xyz *= oPos.w;\n");
     } else {
+        if (vulkan) {
+            mstring_append(body, "    oPos.z = (oPos.z - clipRange.x)/(clipRange.y - clipRange.x);\n");
+        } else {
+            mstring_append(body,
+                           "    oPos.z = (oPos.z - clipRange.x)/(0.5*(clipRange.y "
+                           "- clipRange.x)) - 1;\n");
+        }
+        mstring_append(body,
+            "  }\n"
+        );
         mstring_append(
             body,
 

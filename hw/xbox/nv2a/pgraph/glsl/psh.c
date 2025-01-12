@@ -726,15 +726,17 @@ static void apply_convolution_filter(const struct PixelShader *ps, MString *vars
         "}\n", tex, tex, tex, tex, tex_remap, tex);
 }
 
-static MString *psh_convert(struct PixelShader *ps, bool z_perspective)
+static MString* psh_convert(struct PixelShader *ps)
 {
     int i;
 
+    bool z_perspective = ps->state.z_perspective;
+    bool tex = ps->state.texture_perspective;
     const char *u = ps->state.vulkan ? "" : "uniform "; // FIXME: Remove
 
     MString *preflight = mstring_new();
     pgraph_get_glsl_vtx_header(preflight, ps->state.vulkan,
-                             ps->state.smooth_shading, true, false, false, z_perspective);
+                             ps->state.smooth_shading, true, false, false, tex || z_perspective);
 
     if (ps->state.vulkan) {
         mstring_append_fmt(preflight,
@@ -869,42 +871,20 @@ static MString *psh_convert(struct PixelShader *ps, bool z_perspective)
 
     /* calculate perspective-correct inputs */
     MString *vars = mstring_new();
-    if (!z_perspective) {
-        if (ps->state.smooth_shading) {
-            mstring_append(vars, "vec4 pD0 = vtxD0 / vtx_inv_w;\n");
-            mstring_append(vars, "vec4 pD1 = vtxD1 / vtx_inv_w;\n");
-            mstring_append(vars, "vec4 pB0 = vtxB0 / vtx_inv_w;\n");
-            mstring_append(vars, "vec4 pB1 = vtxB1 / vtx_inv_w;\n");
-        } else {
-            mstring_append(vars, "vec4 pD0 = vtxD0 / vtx_inv_w_flat;\n");
-            mstring_append(vars, "vec4 pD1 = vtxD1 / vtx_inv_w_flat;\n");
-            mstring_append(vars, "vec4 pB0 = vtxB0 / vtx_inv_w_flat;\n");
-            mstring_append(vars, "vec4 pB1 = vtxB1 / vtx_inv_w_flat;\n");
-        }
-        mstring_append(vars, "vec4 pFog = vec4(fogColor.rgb, clamp(vtxFog / vtx_inv_w, 0.0, 1.0));\n");
-        mstring_append(vars, "vec4 pT0 = vtxT0 / vtx_inv_w;\n");
-        mstring_append(vars, "vec4 pT1 = vtxT1 / vtx_inv_w;\n");
-        mstring_append(vars, "vec4 pT2 = vtxT2 / vtx_inv_w;\n");
-    } else {
-        mstring_append(vars, "vec4 pD0 = vtxD0;\n");
-        mstring_append(vars, "vec4 pD1 = vtxD1;\n");
-        mstring_append(vars, "vec4 pB0 = vtxB0;\n");
-        mstring_append(vars, "vec4 pB1 = vtxB1;\n");
-        mstring_append(vars, "vec4 pFog = vec4(fogColor.rgb, clamp(vtxFog, 0.0, 1.0));\n");
-        mstring_append(vars, "vec4 pT0 = vtxT0;\n");
-        mstring_append(vars, "vec4 pT1 = vtxT1;\n");
-        mstring_append(vars, "vec4 pT2 = vtxT2;\n");
-    }
+    mstring_append(vars, "vec4 pD0 = vtxD0;\n");
+    mstring_append(vars, "vec4 pD1 = vtxD1;\n");
+    mstring_append(vars, "vec4 pB0 = vtxB0;\n");
+    mstring_append(vars, "vec4 pB1 = vtxB1;\n");
+    mstring_append(vars, "vec4 pFog = vec4(fogColor.rgb, clamp(vtxFog, 0.0, 1.0));\n");
+    mstring_append(vars, "vec4 pT0 = vtxT0;\n");
+    mstring_append(vars, "vec4 pT1 = vtxT1;\n");
+    mstring_append(vars, "vec4 pT2 = vtxT2;\n");
 
     if (ps->state.point_sprite) {
         assert(!ps->state.rect_tex[3]);
         mstring_append(vars, "vec4 pT3 = vec4(gl_PointCoord, 1.0, 1.0);\n");
     } else {
-        if (!z_perspective) {
-            mstring_append(vars, "vec4 pT3 = vtxT3 / vtx_inv_w;\n");
-        } else {
-            mstring_append(vars, "vec4 pT3 = vtxT3;\n");
-        }
+        mstring_append(vars, "vec4 pT3 = vtxT3;\n");
     }
     mstring_append(vars, "\n");
     mstring_append(vars, "vec4 v0 = pD0;\n");
@@ -1218,8 +1198,8 @@ static MString *psh_convert(struct PixelShader *ps, bool z_perspective)
         }
     }
 
-    if (z_perspective) {     
-        mstring_append(ps->code, "gl_FragDepth = (1.0/gl_FragCoord.w)/clipRange.y;\n");
+    if (z_perspective) {
+        mstring_append(ps->code, "gl_FragDepth = 1.0/(gl_FragCoord.w * clipRange.y);\n");
     }
 
     for (i = 0; i < ps->num_var_refs; i++) {
@@ -1281,7 +1261,7 @@ static void parse_combiner_output(uint32_t value, struct OutputInfo *out)
     out->cd_alphablue = flags & 0x40;
 }
 
-MString *pgraph_gen_psh_glsl(const PshState state, bool z_perspective)
+MString *pgraph_gen_psh_glsl(const PshState state)
 {
     int i;
     struct PixelShader ps;
@@ -1331,5 +1311,5 @@ MString *pgraph_gen_psh_glsl(const PshState state, bool z_perspective)
         ps.final_input.inv_r0 = flags & PS_FINALCOMBINERSETTING_COMPLEMENT_R0;
     }
 
-    return psh_convert(&ps, z_perspective);
+    return psh_convert(&ps);
 }
