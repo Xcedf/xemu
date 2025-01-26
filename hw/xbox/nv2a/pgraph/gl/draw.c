@@ -206,6 +206,7 @@ void pgraph_gl_draw_begin(NV2AState *d)
     /* Clipping */
     glEnable(GL_CLIP_DISTANCE0);
     glEnable(GL_CLIP_DISTANCE1);
+    glEnable(GL_DEPTH_CLAMP);
 
     /* Front-face select */
     glFrontFace(pgraph_reg_r(pg, NV_PGRAPH_SETUPRASTER)
@@ -253,14 +254,6 @@ void pgraph_gl_draw_begin(NV2AState *d)
         glDepthFunc(pgraph_depth_func_gl_map[depth_func]);
     } else {
         glDisable(GL_DEPTH_TEST);
-    }
-
-    if (GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_ZCOMPRESSOCCLUDE),
-                 NV_PGRAPH_ZCOMPRESSOCCLUDE_ZCLAMP_EN) ==
-        NV_PGRAPH_ZCOMPRESSOCCLUDE_ZCLAMP_EN_CLAMP) {
-        glEnable(GL_DEPTH_CLAMP);
-    } else {
-        glDisable(GL_DEPTH_CLAMP);
     }
 
     if (GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_CONTROL_3),
