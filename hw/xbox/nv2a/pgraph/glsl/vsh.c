@@ -129,6 +129,20 @@ MString *pgraph_gen_vsh_glsl(const ShaderState *state, bool prefix_outputs)
             }
         }
     }
+    mstring_append(header,
+                  "/* Converts the input to vec4, pads with last component */\n"
+                  "vec4 _in(float v) { return vec4(v); }\n"
+                  "vec4 _in(vec2 v) { return v.xyyy; }\n"
+                  "vec4 _in(vec3 v) { return v.xyzz; }\n"
+                  "vec4 _in(vec4 v) { return v.xyzw; }\n"
+                  "#define FixNaN(src, mask) _FixNaN(_in(src)).mask\n"
+                  "vec4 _FixNaN(vec4 src)\n"
+                  "{\n"
+                  "  if (any(isnan(src))) {\n"
+                  "    return mix(src, vec4(1.0), isnan(src));\n"
+                  "  }\n"
+                  "  return src;\n"
+                  "}\n");
     mstring_append(header, "\n");
 
     MString *body = mstring_from_str("void main() {\n");
@@ -242,15 +256,15 @@ MString *pgraph_gen_vsh_glsl(const ShaderState *state, bool prefix_outputs)
 
     /* Set outputs */
     mstring_append(body, "\n"
-                   "  vtxD0 = clamp(oD0, 0.0, 1.0);\n"
-                   "  vtxD1 = clamp(oD1, 0.0, 1.0);\n"
-                   "  vtxB0 = clamp(oB0, 0.0, 1.0);\n"
-                   "  vtxB1 = clamp(oB1, 0.0, 1.0);\n"
-                   "  vtxFog = oFog.x;\n"
-                   "  vtxT0 = oT0;\n"
-                   "  vtxT1 = oT1;\n"
-                   "  vtxT2 = oT2;\n"
-                   "  vtxT3 = oT3;\n"
+                   "  vtxD0 = clamp(FixNaN(oD0, xyzw), 0.0, 1.0);\n"
+                   "  vtxD1 = clamp(FixNaN(oD1, xyzw), 0.0, 1.0);\n"
+                   "  vtxB0 = clamp(FixNaN(oB0, xyzw), 0.0, 1.0);\n"
+                   "  vtxB1 = clamp(FixNaN(oB1, xyzw), 0.0, 1.0);\n"
+                   "  vtxFog = FixNaN(oFog, x);\n"
+                   "  vtxT0 = FixNaN(oT0, xyzw);\n"
+                   "  vtxT1 = FixNaN(oT1, xyzw);\n"
+                   "  vtxT2 = FixNaN(oT2, xyzw);\n"
+                   "  vtxT3 = FixNaN(oT3, xyzw);\n"
                    "  gl_PointSize = oPts.x;\n"
     );
 
