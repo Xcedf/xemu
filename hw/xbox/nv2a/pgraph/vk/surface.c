@@ -191,7 +191,6 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
     pgraph_apply_scaling_factor(pg, &scaled_width, &scaled_height);
 
     VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg);
-    pgraph_vk_begin_debug_marker(r, cmd, RGBA_RED, __func__);
 
     pgraph_vk_transition_image_layout(
         pg, cmd, surface->image, surface->host_fmt.vk_format,
@@ -433,7 +432,6 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
                          &post_copy_dst_barrier, 0, NULL);
 
     nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_1);
-    pgraph_vk_end_debug_marker(r, cmd);
     pgraph_vk_end_single_time_commands(pg, cmd);
 
     void *mapped_memory_ptr = NULL;
@@ -784,8 +782,6 @@ static void create_surface_image(PGRAPHState *pg, SurfaceBinding *surface)
 
     // FIXME: Go right into main command buffer
     VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg);
-    pgraph_vk_begin_debug_marker(r, cmd, RGBA_RED, __func__);
-
     pgraph_vk_transition_image_layout(
         pg, cmd, surface->image, surface->host_fmt.vk_format,
         VK_IMAGE_LAYOUT_UNDEFINED,
@@ -793,7 +789,6 @@ static void create_surface_image(PGRAPHState *pg, SurfaceBinding *surface)
                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_3);
-    pgraph_vk_end_debug_marker(r, cmd);
     pgraph_vk_end_single_time_commands(pg, cmd);
     nv2a_profile_inc_counter(NV2A_PROF_SURF_CREATE);
 }
@@ -982,7 +977,6 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
     vmaUnmapMemory(r->allocator, copy_buffer->allocation);
 
     VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg);
-    pgraph_vk_begin_debug_marker(r, cmd, RGBA_RED, __func__);
 
     VkBufferMemoryBarrier host_barrier = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -1232,7 +1226,6 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_2);
-    pgraph_vk_end_debug_marker(r, cmd);
     pgraph_vk_end_single_time_commands(pg, cmd);
 
     surface->initialized = true;

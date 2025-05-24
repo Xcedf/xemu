@@ -647,7 +647,7 @@ static void shader_update_constants(PGRAPHState *pg, ShaderBinding *binding,
         float zclip_min = *(float *)&v[0] / zmax * 2.0 - 1.0;
         float zclip_max = *(float *)&v[1] / zmax * 2.0 - 1.0;
         uniform4f(&binding->vertex->uniforms, binding->clip_range_loc, 0,
-                         zmax, zclip_min, zclip_max);
+                         zclip_max, zclip_min, zclip_max);
     }
 
     /* Clipping regions */
