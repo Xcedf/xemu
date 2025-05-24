@@ -822,22 +822,12 @@ void pgraph_gen_vsh_prog_glsl(uint16_t version,
     assert(has_final);
 
     mstring_append(body,
-        /* the shaders leave the result in screen space, while
-         * opengl expects it in clip space.
-         * TODO: the pixel-center co-ordinate differences should handled
+        /* The shaders leave the result in screen space, while OpenGL expects it
+         * in clip space.
          */
-        "  oPos.x = 2.0 * (oPos.x - surfaceSize.x * 0.5) / surfaceSize.x;\n"
-        );
+        "  oPos.xy = roundScreenCoords(oPos.xy);\n"
+        "  oPos.xy = (2.0f * oPos.xy - surfaceSize) / surfaceSize;\n"
 
-    if (vulkan) {
-        mstring_append(body,
-                       "  oPos.y = 2.0 * oPos.y / surfaceSize.y - 1.0;\n");
-    } else {
-        mstring_append(body, "  oPos.y = -2.0 * (oPos.y - surfaceSize.y * 0.5) "
-                             "/ surfaceSize.y;\n");
-    }
-
-    mstring_append(body,
         "  oPos.z = oPos.z / clipRange.y;\n"
         "  oPos.w = clampAwayZeroInf(oPos.w);\n"
 
