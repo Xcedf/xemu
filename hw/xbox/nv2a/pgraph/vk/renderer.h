@@ -394,8 +394,7 @@ void pgraph_vk_check_memory_budget(PGRAPHState *pg);
 
 // debug.c
 void pgraph_vk_debug_init(void);
-void pgraph_vk_insert_debug_marker(PGRAPHVkState *r, VkCommandBuffer cmd,
-                                   float color[4], const char *format, ...) __attribute__ ((format (printf, 4, 5)));
+void pgraph_vk_insert_debug_marker(PGRAPHVkState *r, VkCommandBuffer cmd, const char* name, float color[4]);
 
 // instance.c
 void pgraph_vk_init_instance(PGRAPHState *pg, Error **errp);

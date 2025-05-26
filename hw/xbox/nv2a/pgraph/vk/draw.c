@@ -1428,7 +1428,7 @@ static void begin_draw(PGRAPHState *pg)
     assert(r->in_command_buffer);
 
     // Visibility testing
-    if (!pg->clearing && pg->zpass_pixel_count_enable) {
+    if (pg->zpass_pixel_count_enable) {
         if (r->new_query_needed && r->query_in_flight) {
             end_render_pass(r);
             end_query(r);
@@ -1440,10 +1440,6 @@ static void begin_draw(PGRAPHState *pg)
     } else if (r->query_in_flight) {
         end_render_pass(r);
         end_query(r);
-    }
-
-    if (pg->clearing) {
-        end_render_pass(r);
     }
 
     bool must_bind_pipeline = r->pipeline_binding_changed;
@@ -1513,10 +1509,6 @@ static void end_draw(PGRAPHState *pg)
 
     assert(r->in_command_buffer);
     assert(r->in_render_pass);
-
-    if (pg->clearing) {
-        end_render_pass(r);
-    }
 
     r->in_draw = false;
 
