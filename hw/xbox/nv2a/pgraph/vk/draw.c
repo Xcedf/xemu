@@ -470,7 +470,7 @@ static void create_clear_pipeline(PGRAPHState *pg)
             .module = r->quad_vert_module->module,
             .pName = "main",
         };
-    if (partial_color_clear) {
+    if (clear_any_color_channels) {
         shader_stages[num_active_shader_stages++] =
             (VkPipelineShaderStageCreateInfo){
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -758,13 +758,15 @@ static void create_pipeline(PGRAPHState *pg)
                 .pName = "main",
             };
     }
-    shader_stages[num_active_shader_stages++] =
-        (VkPipelineShaderStageCreateInfo){
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = r->shader_binding->fragment->module,
-            .pName = "main",
-        };
+    if (r->color_binding) {
+        shader_stages[num_active_shader_stages++] =
+            (VkPipelineShaderStageCreateInfo){
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .module = r->shader_binding->fragment->module,
+                .pName = "main",
+            };
+    }
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
