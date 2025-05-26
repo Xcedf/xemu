@@ -229,7 +229,11 @@ static TextureLayout *get_texture_layout(PGRAPHState *pg, int texture_idx)
     }
 
     if (s.dimensionality == 2) {
-        hwaddr layer_size = s.cubemap ? get_cubemap_layer_size(pg, s) : 0;
+        hwaddr layer_size = 0;
+        if (s.cubemap) {
+            layer_size = get_cubemap_layer_size(pg, s);
+        }
+
         const int num_layers = s.cubemap ? 6 : 1;
         for (int layer = 0; layer < num_layers; layer++) {
             unsigned int width = adjusted_width, height = adjusted_height;
@@ -545,30 +549,12 @@ static void upload_texture_image(PGRAPHState *pg, int texture_idx,
             region++;
         }
     }
-    assert(buffer_offset <= r->storage_buffers[BUFFER_STAGING_SRC].buffer_size);
-
-    vmaFlushAllocation(r->allocator,
-                       r->storage_buffers[BUFFER_STAGING_SRC].allocation, 0,
-                       VK_WHOLE_SIZE);
-
+    assert(buffer_offset <= texture_data_size);
     vmaUnmapMemory(r->allocator,
                    r->storage_buffers[BUFFER_STAGING_SRC].allocation);
 
     // FIXME: Use nondraw. Need to fill and copy tex buffer at once
     VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg);
-
-    VkBufferMemoryBarrier host_barrier = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = r->storage_buffers[BUFFER_STAGING_SRC].buffer,
-        .size = VK_WHOLE_SIZE
-    };
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_HOST_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                         &host_barrier, 0, NULL);
 
     pgraph_vk_transition_image_layout(pg, cmd, binding->image, vkf.vk_format,
                                       binding->current_layout,
@@ -992,11 +978,6 @@ static void create_dummy_texture(PGRAPHState *pg)
                           r->storage_buffers[BUFFER_STAGING_SRC].allocation,
                           (void *)&mapped_memory_ptr));
     memset(mapped_memory_ptr, 0xff, texture_data_size);
-
-    vmaFlushAllocation(r->allocator,
-                       r->storage_buffers[BUFFER_STAGING_SRC].allocation, 0,
-                       VK_WHOLE_SIZE);
-
     vmaUnmapMemory(r->allocator,
                    r->storage_buffers[BUFFER_STAGING_SRC].allocation);
 
