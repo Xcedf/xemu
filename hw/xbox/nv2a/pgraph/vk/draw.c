@@ -188,14 +188,6 @@ static void init_clear_shaders(PGRAPHState *pg)
         r, VK_SHADER_STAGE_FRAGMENT_BIT, solid_frag_glsl);
 }
 
-static void finalize_clear_shaders(PGRAPHState *pg)
-{
-    PGRAPHVkState *r = pg->vk_renderer_state;
-
-    pgraph_vk_destroy_shader_module(r, r->quad_vert_module);
-    pgraph_vk_destroy_shader_module(r, r->solid_frag_module);
-}
-
 void pgraph_vk_init_pipelines(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
@@ -220,7 +212,6 @@ void pgraph_vk_finalize_pipelines(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
-    finalize_clear_shaders(pg);
     finalize_pipeline_cache(pg);
 
     vkDestroyFence(r->device, r->command_buffer_fence, NULL);
@@ -448,24 +439,20 @@ static void create_clear_pipeline(PGRAPHState *pg)
     bool partial_color_clear =
         clear_any_color_channels && !clear_all_color_channels;
 
-    int num_active_shader_stages = 0;
-    VkPipelineShaderStageCreateInfo shader_stages[2];
-    shader_stages[num_active_shader_stages++] =
+    VkPipelineShaderStageCreateInfo shader_stages[] = {
         (VkPipelineShaderStageCreateInfo){
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_VERTEX_BIT,
             .module = r->quad_vert_module->module,
             .pName = "main",
-        };
-    if (clear_any_color_channels) {
-        shader_stages[num_active_shader_stages++] =
-            (VkPipelineShaderStageCreateInfo){
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = r->solid_frag_module->module,
-                .pName = "main",
-            };
-     }
+        },
+        (VkPipelineShaderStageCreateInfo){
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = r->solid_frag_module->module,
+            .pName = "main",
+        },
+     };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -569,7 +556,7 @@ static void create_clear_pipeline(PGRAPHState *pg)
 
     VkGraphicsPipelineCreateInfo pipeline_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .stageCount = num_active_shader_stages,
+        .stageCount = ARRAY_SIZE(shader_stages),
         .pStages = shader_stages,
         .pVertexInputState = &vertex_input,
         .pInputAssemblyState = &input_assembly,
@@ -1781,10 +1768,6 @@ static void bind_vertex_buffer(PGRAPHState *pg, int buffer_idx,
 
     assert(buffer_idx == BUFFER_VERTEX_RAM ||
            buffer_idx == BUFFER_VERTEX_INLINE);
-
-    if (r->num_active_vertex_binding_descriptions == 0) {
-        return;
-    }
 
     VkBuffer buffers[NV2A_VERTEXSHADER_ATTRIBUTES];
     VkDeviceSize offsets[NV2A_VERTEXSHADER_ATTRIBUTES];
