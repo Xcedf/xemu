@@ -55,7 +55,6 @@ enum MaterialColorSource {
 
 typedef struct ShaderState {
     bool vulkan;
-    bool use_push_constants_for_uniform_attrs;
     unsigned int surface_scale_factor;
 
     PshState psh;

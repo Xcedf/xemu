@@ -478,6 +478,9 @@ static bool select_physical_device(PGRAPHState *pg, Error **errp)
             VK_VERSION_MINOR(r->device_props.driverVersion),
             VK_VERSION_PATCH(r->device_props.driverVersion));
 
+    size_t vsh_attr_values_size =
+        NV2A_VERTEXSHADER_ATTRIBUTES * 4 * sizeof(float);
+    assert(r->device_props.limits.maxPushConstantsSize >= vsh_attr_values_size);
     return true;
 }
 
@@ -694,14 +697,10 @@ void pgraph_vk_init_instance(PGRAPHState *pg, Error **errp)
         return;
     }
 
-    pgraph_vk_finalize_instance(pg);
-
-    const char *msg = "Failed to initialize Vulkan renderer";
     if (*errp) {
-        error_prepend(errp, "%s: ", msg);
-    } else {
-        error_setg(errp, "%s", msg);
+        error_prepend(errp, "Failed to initialize Vulkan renderer: ");
     }
+    pgraph_vk_finalize_instance(pg);
 }
 
 void pgraph_vk_finalize_instance(PGRAPHState *pg)

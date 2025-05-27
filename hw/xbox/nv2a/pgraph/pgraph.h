@@ -235,9 +235,6 @@ typedef struct PGRAPHState {
     bool sync_pending;
     QemuEvent sync_complete;
 
-    bool framebuffer_in_use;
-    QemuCond framebuffer_released;
-
     unsigned int surface_scale_factor;
     uint8_t *scale_buf;
 
@@ -373,9 +370,6 @@ void pgraph_finish_inline_buffer_vertex(PGRAPHState *pg);
 void pgraph_reset_inline_buffers(PGRAPHState *pg);
 void pgraph_reset_draw_arrays(PGRAPHState *pg);
 void pgraph_update_inline_value(VertexAttribute *attr, const uint8_t *data);
-void pgraph_get_inline_values(PGRAPHState *pg, uint16_t attrs,
-                               float values[NV2A_VERTEXSHADER_ATTRIBUTES][4],
-                               int *count);
 
 /* RDI */
 uint32_t pgraph_rdi_read(PGRAPHState *pg, unsigned int select,

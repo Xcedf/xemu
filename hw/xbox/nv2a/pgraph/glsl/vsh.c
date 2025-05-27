@@ -101,19 +101,15 @@ MString *pgraph_gen_vsh_glsl(const ShaderState *state, bool prefix_outputs)
                        );
     }
     mstring_append(header, "\n");
-
-    int num_uniform_attrs = 0;
-
     for (i = 0; i < NV2A_VERTEXSHADER_ATTRIBUTES; i++) {
+
         bool is_uniform = state->uniform_attrs & (1 << i);
         bool is_compressed = state->compressed_attrs & (1 << i);
 
         assert(!(is_uniform && is_compressed));
 
         if (is_uniform) {
-            mstring_append_fmt(header, "vec4 v%d = inlineValue[%d];\n", i,
-                               num_uniform_attrs);
-            num_uniform_attrs += 1;
+            mstring_append_fmt(header, "vec4 v%d = inlineValue[%d];\n", i, i);
         } else {
             if (state->compressed_attrs & (1 << i)) {
                 mstring_append_fmt(header,
@@ -264,24 +260,17 @@ MString *pgraph_gen_vsh_glsl(const ShaderState *state, bool prefix_outputs)
 
     mstring_append(body, "}\n");
 
+
     /* Return combined header + source */
     if (state->vulkan) {
-        // FIXME: Optimize uniforms
-        if (state->use_push_constants_for_uniform_attrs) {
-            mstring_append_fmt(output,
-                "layout(push_constant) uniform PushConstants {\n"
-                "    vec4 inlineValue[%d];\n"
-                "};\n\n", num_uniform_attrs);
-        } else {
-            mstring_append_fmt(uniforms, "    vec4 inlineValue[%d];\n",
-                               num_uniform_attrs);
-        }
         mstring_append_fmt(
-            output,
-            "layout(binding = %d, std140) uniform VshUniforms {\n"
-            "%s"
-            "};\n\n",
+            output, "layout(binding = %d, std140) uniform VshUniforms {\n%s};\n\n",
             VSH_UBO_BINDING, mstring_get_str(uniforms));
+        // FIXME: Only needed for vk, for gl we use glVertexAttrib
+        mstring_append_fmt(output,
+            "layout(push_constant) uniform PushConstants {\n"
+            "vec4 inlineValue[" stringify(NV2A_VERTEXSHADER_ATTRIBUTES) "];\n"
+            "};\n\n");
     } else {
         mstring_append(
             output, mstring_get_str(uniforms));
