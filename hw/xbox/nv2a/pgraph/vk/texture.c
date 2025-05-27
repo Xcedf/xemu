@@ -591,16 +591,6 @@ static void copy_zeta_surface_to_texture(PGRAPHState *pg, SurfaceBinding *surfac
     TextureShape *state = &texture->key.state;
     VkColorFormatInfo vkf = kelvin_color_format_vk_map[state->color_format];
 
-    bool use_compute_to_convert_depth_stencil =
-        surface->host_fmt.vk_format == VK_FORMAT_D24_UNORM_S8_UINT ||
-        surface->host_fmt.vk_format == VK_FORMAT_D32_SFLOAT_S8_UINT;
-
-    bool compute_needs_finish = use_compute_to_convert_depth_stencil &&
-                                pgraph_vk_compute_needs_finish(r);
-    if (compute_needs_finish) {
-        pgraph_vk_finish(pg, VK_FINISH_REASON_NEED_BUFFER_SPACE);
-    }
-
     nv2a_profile_inc_counter(NV2A_PROF_SURF_TO_TEX);
 
     trace_nv2a_pgraph_surface_render_to_texture(
@@ -654,6 +644,10 @@ static void copy_zeta_surface_to_texture(PGRAPHState *pg, SurfaceBinding *surfac
             .imageExtent = (VkExtent3D){scaled_width, scaled_height, 1},
         };
     }
+
+    bool use_compute_to_convert_depth_stencil =
+        surface->host_fmt.vk_format == VK_FORMAT_D24_UNORM_S8_UINT ||
+        surface->host_fmt.vk_format == VK_FORMAT_D32_SFLOAT_S8_UINT;
     assert(use_compute_to_convert_depth_stencil && "Unimplemented");
 
     StorageBuffer *dst_storage_buffer = &r->storage_buffers[BUFFER_COMPUTE_DST];
@@ -1066,8 +1060,15 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
         // FIXME: Restructure to support rendering surfaces to cubemap faces
 
         // Writeback any surfaces which this texture may index
-        pgraph_vk_download_surfaces_in_range_if_dirty(
-            pg, texture_vram_offset, texture_length);
+        hwaddr tex_vram_end = texture_vram_offset + texture_length - 1;
+        QTAILQ_FOREACH(surface, &r->surfaces, entry) {
+            hwaddr surf_vram_end = surface->vram_addr + surface->size - 1;
+            bool overlapping = !(surface->vram_addr >= tex_vram_end
+                                 || texture_vram_offset >= surf_vram_end);
+            if (overlapping) {
+                pgraph_vk_surface_download_if_dirty(d, surface);
+            }
+        }
     }
 
     if (surface_to_texture && pg->surface_scale_factor > 1) {
@@ -1192,42 +1193,38 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
     uint32_t border_color_pack32 =
         pgraph_reg_r(pg, NV_PGRAPH_BORDERCOLOR0 + texture_idx * 4);
 
-    bool is_integer_type = vkf.vk_format == VK_FORMAT_R32_UINT;
-
     if (r->custom_border_color_extension_enabled) {
-        vk_border_color = is_integer_type ? VK_BORDER_COLOR_INT_CUSTOM_EXT :
-                                            VK_BORDER_COLOR_FLOAT_CUSTOM_EXT;
+        float border_color_rgba[4];
+        pgraph_argb_pack32_to_rgba_float(border_color_pack32, border_color_rgba);
+
         custom_border_color_create_info =
             (VkSamplerCustomBorderColorCreateInfoEXT){
                 .sType =
                     VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT,
+                .customBorderColor.float32 = { border_color_rgba[0],
+                                               border_color_rgba[1],
+                                               border_color_rgba[2],
+                                               border_color_rgba[3] },
                 .format = image_view_create_info.format,
                 .pNext = sampler_next_struct
             };
-        if (is_integer_type) {
-            float rgba[4];
-            pgraph_argb_pack32_to_rgba_float(border_color_pack32, rgba);
-            for (int i = 0; i < 4; i++) {
-                custom_border_color_create_info.customBorderColor.uint32[i] =
-                    (uint32_t)((double)rgba[i] * (double)0xffffffff);
-            }
-        } else {
-            pgraph_argb_pack32_to_rgba_float(
-                border_color_pack32,
-                custom_border_color_create_info.customBorderColor.float32);
-        }
+
+        vk_border_color = VK_BORDER_COLOR_FLOAT_CUSTOM_EXT;
         sampler_next_struct = &custom_border_color_create_info;
     } else {
         // FIXME: Handle custom color in shader
-        if (is_integer_type) {
-            vk_border_color = VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
-        } else if (border_color_pack32 == 0x00000000) {
+        if (border_color_pack32 == 0x00000000) {
             vk_border_color = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
         } else if (border_color_pack32 == 0xff000000) {
             vk_border_color = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
         } else {
             vk_border_color = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
         }
+    }
+
+    if (vkf.vk_format == VK_FORMAT_R32_UINT) {
+        // Border color type must match sampled type
+        vk_border_color = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     }
 
     uint32_t filter = pgraph_reg_r(pg, NV_PGRAPH_TEXFILTER0 + texture_idx * 4);
@@ -1252,8 +1249,7 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
         vk_min_filter = pgraph_texture_min_filter_vk_map[min_filter];
 
         if (f_basic.linear && vk_mag_filter != vk_min_filter) {
-            // FIXME: Per spec, if coordinates unnormalized, filters must be
-            // same.
+            // Per spec, if coordinates unnormalized, filters must be same
             vk_mag_filter = vk_min_filter = VK_FILTER_LINEAR;
         }
     } else {
