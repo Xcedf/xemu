@@ -83,10 +83,9 @@ const char *pack_d32_sfloat_s8_uint_to_z24s8_glsl =
     "layout(binding = 1) buffer StencilIn { uint stencil_in[]; };\n"
     "layout(binding = 2) buffer DepthStencilOut { uint depth_stencil_out[]; };\n"
     "uint get_input_idx(uint idx_out) {\n"
-    "    uint scale = width_in / width_out;"
-    "    uint y = (idx_out / width_out) * scale;\n"
-    "    uint x = (idx_out % width_out) * scale;\n"
-    "    return y * width_in + x;\n"
+    "    uint y = idx_out / width_out;\n"
+    "    uint x = idx_out % width_out;\n"
+    "    return (y * width_in + x) * (width_in / width_out);\n"
     "}\n"
     "void main() {\n"
     "    uint idx_out = gl_GlobalInvocationID.x;\n"
@@ -130,7 +129,7 @@ static void create_descriptor_pool(PGRAPHState *pg)
     VkDescriptorPoolSize pool_sizes[] = {
         {
             .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 3 * ARRAY_SIZE(r->compute.descriptor_sets),
+            .descriptorCount = 3,
         },
     };
 
