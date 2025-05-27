@@ -315,7 +315,6 @@ static void shader_cache_entry_init(Lru *lru, LruNode *node, void *state)
 {
     ShaderBinding *snode = container_of(node, ShaderBinding, node);
     memcpy(&snode->state, state, sizeof(ShaderState));
-    snode->initialized = false;
 }
 
 static void shader_cache_entry_post_evict(Lru *lru, LruNode *node)
@@ -334,7 +333,7 @@ static void shader_cache_entry_post_evict(Lru *lru, LruNode *node)
         }
     }
 
-    snode->initialized = false;
+    memset(&snode->state, 0, sizeof(ShaderState));
 }
 
 static bool shader_cache_entry_compare(Lru *lru, LruNode *node, void *key)
@@ -378,7 +377,7 @@ static ShaderBinding *gen_shaders(PGRAPHState *pg, ShaderState *state)
 
     NV2A_VK_DPRINTF("shader state hash: %016lx, %p", hash, snode);
 
-    if (!snode->initialized) {
+    if (!snode->fragment) {
         NV2A_VK_DPRINTF("cache miss");
         nv2a_profile_inc_counter(NV2A_PROF_SHADER_GEN);
 
@@ -427,8 +426,6 @@ static ShaderBinding *gen_shaders(PGRAPHState *pg, ShaderState *state)
         }
 
         update_shader_constant_locations(snode);
-
-        snode->initialized = true;
     }
 
     return snode;
