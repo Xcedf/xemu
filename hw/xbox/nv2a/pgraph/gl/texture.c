@@ -809,16 +809,11 @@ void pgraph_gl_init_texture_cache(NV2AState *d)
     r->texture_cache.post_node_evict = texture_cache_entry_post_evict;
 }
 
-void pgraph_gl_finalize_textures(PGRAPHState *pg)
+void pgraph_gl_deinit_texture_cache(PGRAPHState *pg)
 {
     PGRAPHGLState *r = pg->gl_renderer_state;
 
-    for (int i = 0; i < NV2A_MAX_TEXTURES; i++) {
-        r->texture_binding[i] = NULL;
-    }
-
+    // Clear out texture cache
     lru_flush(&r->texture_cache);
     free(r->texture_cache_entries);
-
-    r->texture_cache_entries = NULL;
 }

@@ -582,15 +582,13 @@ void pgraph_gl_init_shader_cache(PGRAPHState *pg)
                        shader_reload_lru_from_disk, pg, QEMU_THREAD_JOINABLE);
 }
 
-void pgraph_gl_finalize_shaders(PGRAPHState *pg)
+void pgraph_gl_deinit_shader_cache(PGRAPHState *pg)
 {
     PGRAPHGLState *r = pg->gl_renderer_state;
 
     // Clear out shader cache
-    pgraph_gl_shader_write_cache_reload_list(pg); // FIXME: also flushes, rename for clarity
+    pgraph_gl_shader_write_cache_reload_list(pg);
     free(r->shader_cache_entries);
-    r->shader_cache_entries = NULL;
-
     qemu_mutex_destroy(&r->shader_cache_lock);
 }
 
@@ -1044,7 +1042,7 @@ void pgraph_gl_bind_shaders(PGRAPHState *pg)
                          fixed_function ? "yes" : "no");
 
     bool binding_changed = false;
-    if (r->shader_binding && !test_shaders_dirty(pg) && !pg->program_data_dirty) {
+    if (!test_shaders_dirty(pg) && !pg->program_data_dirty) {
         nv2a_profile_inc_counter(NV2A_PROF_SHADER_BIND_NOTDIRTY);
         goto update_constants;
     }
@@ -1054,7 +1052,6 @@ void pgraph_gl_bind_shaders(PGRAPHState *pg)
     ShaderBinding* old_binding = r->shader_binding;
 
     ShaderState state = pgraph_get_shader_state(pg);
-    assert(!state.vulkan);
 
     uint64_t shader_state_hash = fast_hash((uint8_t*) &state, sizeof(ShaderState));
     qemu_mutex_lock(&r->shader_cache_lock);
