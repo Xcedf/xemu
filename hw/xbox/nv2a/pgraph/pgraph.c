@@ -20,7 +20,6 @@
  */
 
 #include "../nv2a_int.h"
-#include "ui/xemu-notifications.h"
 #include "ui/xemu-settings.h"
 #include "util.h"
 #include "swizzle.h"
@@ -219,7 +218,6 @@ void pgraph_init(NV2AState *d)
 
     PGRAPHState *pg = &d->pgraph;
     qemu_mutex_init(&pg->lock);
-    qemu_mutex_init(&pg->renderer_lock);
     qemu_event_init(&pg->sync_complete, false);
     qemu_event_init(&pg->flush_complete, false);
 
@@ -239,11 +237,21 @@ void pgraph_init(NV2AState *d)
     }
 
     pgraph_clear_dirty_reg_map(pg);
+
+    pg->renderer = renderers[g_config.display.renderer];
+    pg->renderer->ops.init(d);
 }
 
 void pgraph_clear_dirty_reg_map(PGRAPHState *pg)
 {
     memset(pg->regs_dirty, 0, sizeof(pg->regs_dirty));
+}
+
+void pgraph_init_thread(NV2AState *d)
+{
+    if (d->pgraph.renderer->ops.init_thread) {
+        d->pgraph.renderer->ops.init_thread(d);
+    }
 }
 
 static CONFIG_DISPLAY_RENDERER get_default_renderer(void)
@@ -271,71 +279,9 @@ void nv2a_context_init(void)
                 renderers[g_config.display.renderer]->name);
     }
 
-    // FIXME: We need a mechanism for renderer to initialize new GL contexts
-    //        on the main thread at run time. For now, just let them all create
-    //        what they need.
-    for (int i = 0; i < ARRAY_SIZE(renderers); i++) {
-        const PGRAPHRenderer *r = renderers[i];
-        if (!r) {
-            continue;
-        }
-        if (r->ops.early_context_init) {
-            r->ops.early_context_init();
-        }
+    if (renderers[g_config.display.renderer]->ops.early_context_init) {
+        renderers[g_config.display.renderer]->ops.early_context_init();
     }
-}
-
-static bool attempt_renderer_init(PGRAPHState *pg)
-{
-    NV2AState *d = container_of(pg, NV2AState, pgraph);
-
-    pg->renderer = renderers[g_config.display.renderer];
-    if (!pg->renderer) {
-        xemu_queue_error_message("Configured renderer not available");
-        return false;
-    }
-
-    Error *local_err = NULL;
-    if (pg->renderer->ops.init) {
-        pg->renderer->ops.init(d, &local_err);
-    }
-    if (local_err) {
-        const char *msg = error_get_pretty(local_err);
-        xemu_queue_error_message(msg);
-        error_free(local_err);
-        local_err = NULL;
-        return false;
-    }
-
-    return true;
-}
-
-static void init_renderer(PGRAPHState *pg)
-{
-    if (attempt_renderer_init(pg)) {
-        return;  // Success
-    }
-
-    CONFIG_DISPLAY_RENDERER default_renderer = get_default_renderer();
-    if (default_renderer != g_config.display.renderer) {
-        g_config.display.renderer = default_renderer;
-        if (attempt_renderer_init(pg)) {
-            g_autofree gchar *msg = g_strdup_printf(
-                "Switched to default renderer: %s", pg->renderer->name);
-            xemu_queue_notification(msg);
-            return;
-        }
-    }
-
-    // FIXME: Try others
-
-    fprintf(stderr, "Fatal error: cannot initialize renderer\n");
-    exit(1);
-}
-
-void pgraph_init_thread(NV2AState *d)
-{
-    init_renderer(&d->pgraph);
 }
 
 void pgraph_destroy(PGRAPHState *pg)
@@ -352,40 +298,32 @@ void pgraph_destroy(PGRAPHState *pg)
 int nv2a_get_framebuffer_surface(void)
 {
     NV2AState *d = g_nv2a;
-    int s = 0;
 
-    qemu_mutex_lock(&d->pgraph.renderer_lock);
     if (d->pgraph.renderer->ops.get_framebuffer_surface) {
-        s = d->pgraph.renderer->ops.get_framebuffer_surface(d);
+        return d->pgraph.renderer->ops.get_framebuffer_surface(d);
     }
-    qemu_mutex_unlock(&d->pgraph.renderer_lock);
 
-    return s;
+    return 0;
 }
 
 void nv2a_set_surface_scale_factor(unsigned int scale)
 {
     NV2AState *d = g_nv2a;
 
-    qemu_mutex_lock(&d->pgraph.renderer_lock);
     if (d->pgraph.renderer->ops.set_surface_scale_factor) {
         d->pgraph.renderer->ops.set_surface_scale_factor(d, scale);
     }
-    qemu_mutex_unlock(&d->pgraph.renderer_lock);
 }
 
 unsigned int nv2a_get_surface_scale_factor(void)
 {
     NV2AState *d = g_nv2a;
-    int s = 1;
 
-    qemu_mutex_lock(&d->pgraph.renderer_lock);
     if (d->pgraph.renderer->ops.get_surface_scale_factor) {
-        s = d->pgraph.renderer->ops.get_surface_scale_factor(d);
+        return d->pgraph.renderer->ops.get_surface_scale_factor(d);
     }
-    qemu_mutex_unlock(&d->pgraph.renderer_lock);
 
-    return s;
+    return 1;
 }
 
 #define METHOD_ADDR(gclass, name) \
@@ -2939,37 +2877,6 @@ void pgraph_process_pending(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
     pg->renderer->ops.process_pending(d);
-
-    if (g_config.display.renderer != pg->renderer->type) {
-        qemu_mutex_lock(&d->pgraph.renderer_lock);
-        qemu_mutex_unlock(&d->pfifo.lock);
-        qemu_mutex_lock(&d->pgraph.lock);
-
-        if (pg->renderer) {
-            qemu_event_reset(&pg->flush_complete);
-            pg->flush_pending = true;
-
-            qemu_mutex_lock(&d->pfifo.lock);
-            qemu_mutex_unlock(&d->pgraph.lock);
-
-            if (pg->renderer->ops.process_pending) {
-                pg->renderer->ops.process_pending(d);
-            }
-
-            qemu_mutex_unlock(&d->pfifo.lock);
-            qemu_mutex_lock(&d->pgraph.lock);
-
-            if (pg->renderer->ops.finalize) {
-                pg->renderer->ops.finalize(d);
-            }
-        }
-
-        init_renderer(pg);
-
-        qemu_mutex_unlock(&d->pgraph.renderer_lock);
-        qemu_mutex_unlock(&d->pgraph.lock);
-        qemu_mutex_lock(&d->pfifo.lock);
-    }
 }
 
 void pgraph_process_pending_reports(NV2AState *d)

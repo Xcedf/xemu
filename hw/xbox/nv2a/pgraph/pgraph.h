@@ -100,7 +100,8 @@ typedef struct PGRAPHRenderer {
     const char *name;
     struct {
         void (*early_context_init)(void);
-        void (*init)(NV2AState *d, Error **errp);
+        void (*init)(NV2AState *d);
+        void (*init_thread)(NV2AState *d);
         void (*finalize)(NV2AState *d);
         void (*clear_report_value)(NV2AState *d);
         void (*clear_surface)(NV2AState *d, uint32_t parameter);
@@ -126,7 +127,6 @@ typedef struct PGRAPHRenderer {
 
 typedef struct PGRAPHState {
     QemuMutex lock;
-    QemuMutex renderer_lock;
 
     uint32_t pending_interrupts;
     uint32_t enabled_interrupts;

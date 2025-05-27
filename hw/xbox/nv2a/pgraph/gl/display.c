@@ -25,12 +25,10 @@
 
 #include <math.h>
 
-void pgraph_gl_init_display(NV2AState *d)
+void pgraph_gl_init_display_renderer(NV2AState *d)
 {
     struct PGRAPHState *pg = &d->pgraph;
     PGRAPHGLState *r = pg->gl_renderer_state;
-
-    glo_set_current(g_nv2a_context_display);
 
     glGenTextures(1, &r->gl_display_buffer);
     r->gl_display_buffer_internal_format = 0;
@@ -102,8 +100,6 @@ void pgraph_gl_init_display(NV2AState *d)
     glGenFramebuffers(1, &r->disp_rndr.fbo);
     glGenTextures(1, &r->disp_rndr.pvideo_tex);
     assert(glGetError() == GL_NO_ERROR);
-
-    glo_set_current(g_nv2a_context_render);
 }
 
 void pgraph_gl_finalize_display(PGRAPHState *pg)

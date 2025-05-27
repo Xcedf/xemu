@@ -33,23 +33,15 @@ static void early_context_init(void)
 #endif
 }
 
-static void pgraph_vk_init(NV2AState *d, Error **errp)
+static void pgraph_vk_init_thread(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
-
-    pg->vk_renderer_state = (PGRAPHVkState *)g_malloc0(sizeof(PGRAPHVkState));
 
 #if HAVE_EXTERNAL_MEMORY
     glo_set_current(g_gl_context);
 #endif
 
-    pgraph_vk_debug_init();
-
-    pgraph_vk_init_instance(pg, errp);
-    if (*errp) {
-        return;
-    }
-
+    pgraph_vk_init_instance(pg);
     pgraph_vk_init_command_buffers(pg);
     pgraph_vk_init_buffers(d);
     pgraph_vk_init_surfaces(pg);
@@ -200,12 +192,22 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
 #endif
 }
 
+static void pgraph_vk_init(NV2AState *d)
+{
+    PGRAPHState *pg = &d->pgraph;
+
+    pg->vk_renderer_state = (PGRAPHVkState *)g_malloc0(sizeof(PGRAPHVkState));
+
+    pgraph_vk_debug_init();
+}
+
 static PGRAPHRenderer pgraph_vk_renderer = {
     .type = CONFIG_DISPLAY_RENDERER_VULKAN,
     .name = "Vulkan",
     .ops = {
         .init = pgraph_vk_init,
         .early_context_init = early_context_init,
+        .init_thread = pgraph_vk_init_thread,
         .finalize = pgraph_vk_finalize,
         .clear_report_value = pgraph_vk_clear_report_value,
         .clear_surface = pgraph_vk_clear_surface,
