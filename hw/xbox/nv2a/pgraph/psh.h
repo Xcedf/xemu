@@ -71,7 +71,6 @@ typedef struct PshState {
     bool alphakill[4];
     enum ConvolutionFilter conv_tex[4];
     bool tex_x8y24[4];
-    int dim_tex[4];
 
     float border_logical_size[4][3];
     float border_inv_real_size[4][3];
