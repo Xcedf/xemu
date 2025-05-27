@@ -53,12 +53,10 @@ void pgraph_vk_init_buffers(NV2AState *d)
 
     VmaAllocationCreateInfo host_alloc_create_info = {
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
-                 VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
     };
     VmaAllocationCreateInfo device_alloc_create_info = {
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-        .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
     };
 
     r->storage_buffers[BUFFER_STAGING_DST] = (StorageBuffer){
