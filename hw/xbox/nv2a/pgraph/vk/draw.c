@@ -208,7 +208,6 @@ static void finalize_render_passes(PGRAPHVkState *r)
         vkDestroyRenderPass(r->device, p->render_pass, NULL);
     }
     g_array_free(r->render_passes, true);
-    r->render_passes = NULL;
 }
 
 void pgraph_vk_init_pipelines(PGRAPHState *pg)
@@ -308,27 +307,17 @@ static VkRenderPass create_render_pass(PGRAPHVkState *r, RenderPassState *state)
     if (color) {
         dependency.srcStageMask |=
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.srcAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         dependency.dstStageMask |=
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependency.dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     }
 
     if (zeta) {
         dependency.srcStageMask |=
-            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        dependency.srcAccessMask |=
-            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.dstStageMask |=
-            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        dependency.dstAccessMask |=
-            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     }
 
     VkSubpassDescription subpass = {
@@ -742,13 +731,6 @@ static void create_pipeline(PGRAPHState *pg)
     int num_active_shader_stages = 0;
     VkPipelineShaderStageCreateInfo shader_stages[3];
 
-    shader_stages[num_active_shader_stages++] =
-        (VkPipelineShaderStageCreateInfo){
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = r->shader_binding->vertex->module,
-            .pName = "main",
-        };
     if (r->shader_binding->geometry) {
         shader_stages[num_active_shader_stages++] =
             (VkPipelineShaderStageCreateInfo){
@@ -758,15 +740,20 @@ static void create_pipeline(PGRAPHState *pg)
                 .pName = "main",
             };
     }
-    if (r->color_binding) {
-        shader_stages[num_active_shader_stages++] =
-            (VkPipelineShaderStageCreateInfo){
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = r->shader_binding->fragment->module,
-                .pName = "main",
-            };
-    }
+    shader_stages[num_active_shader_stages++] =
+        (VkPipelineShaderStageCreateInfo){
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = r->shader_binding->vertex->module,
+            .pName = "main",
+        };
+    shader_stages[num_active_shader_stages++] =
+        (VkPipelineShaderStageCreateInfo){
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = r->shader_binding->fragment->module,
+            .pName = "main",
+        };
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -789,6 +776,7 @@ static void create_pipeline(PGRAPHState *pg)
         .viewportCount = 1,
         .scissorCount = 1,
     };
+
 
     void *rasterizer_next_struct = NULL;
 
