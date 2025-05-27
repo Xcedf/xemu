@@ -65,7 +65,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     if ((messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) &&
         (messageSeverity & (VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
                             VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT))) {
-        assert(!g_config.display.vulkan.assert_on_validation_msg);
+        assert(false);
     }
     return VK_FALSE;
 }
@@ -271,24 +271,12 @@ static bool create_instance(PGRAPHState *pg, Error **errp)
 
     enable_validation = g_config.display.vulkan.validation_layers;
 
-    VkValidationFeatureEnableEXT enables[] = {
-        VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-        // VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-    };
-
-    VkValidationFeaturesEXT validationFeatures = {
-        .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
-        .enabledValidationFeatureCount = ARRAY_SIZE(enables),
-        .pEnabledValidationFeatures = enables,
-    };
-
     if (enable_validation) {
         if (check_validation_layer_support()) {
             fprintf(stderr, "Warning: Validation layers enabled. Expect "
                             "performance impact.\n");
             create_info.enabledLayerCount = ARRAY_SIZE(validation_layers);
             create_info.ppEnabledLayerNames = validation_layers;
-            create_info.pNext = &validationFeatures;
         } else {
             fprintf(stderr, "Warning: validation layers not available\n");
             enable_validation = false;
