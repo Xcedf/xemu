@@ -151,12 +151,6 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
         surface->host_fmt.vk_format == VK_FORMAT_D24_UNORM_S8_UINT ||
         surface->host_fmt.vk_format == VK_FORMAT_D32_SFLOAT_S8_UINT;
 
-    bool no_conversion_necessary =
-        surface->color || use_compute_to_convert_depth_stencil_format ||
-        surface->host_fmt.vk_format == VK_FORMAT_D16_UNORM;
-
-    assert(no_conversion_necessary);
-
     bool compute_needs_finish = (use_compute_to_convert_depth_stencil_format &&
                                  pgraph_vk_compute_needs_finish(r));
 
@@ -269,42 +263,14 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
         };
     }
 
-    //
-    // Copy image to staging buffer, or to compute_dst if we need to pack it
-    //
-
-    size_t downloaded_image_size = surface->host_fmt.host_bytes_per_pixel *
-                                   surface->width * surface->height;
-    assert((downloaded_image_size) <=
-           r->storage_buffers[BUFFER_STAGING_DST].buffer_size);
-
     int copy_buffer_idx = use_compute_to_convert_depth_stencil_format ?
                              BUFFER_COMPUTE_DST :
                              BUFFER_STAGING_DST;
     VkBuffer copy_buffer = r->storage_buffers[copy_buffer_idx].buffer;
 
-    VkBufferMemoryBarrier pre_copy_dst_barrier = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = copy_buffer,
-        .size = VK_WHOLE_SIZE
-    };
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                         &pre_copy_dst_barrier, 0, NULL);
-
     vkCmdCopyImageToBuffer(cmd, surface_image_loc,
                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, copy_buffer,
                            num_copy_regions, copy_regions);
-
-    pgraph_vk_transition_image_layout(
-        pg, cmd, surface->image, surface->host_fmt.vk_format,
-        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        surface->color ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
-                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     // FIXME: Verify output of depth stencil conversion
     // FIXME: Track current layout and only transition when required
@@ -315,11 +281,7 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
             downscale ? (surface->width * surface->height * bytes_per_pixel) :
                         (scaled_width * scaled_height * bytes_per_pixel);
 
-        //
-        // Pack the depth-stencil image into compute_src buffer
-        //
-
-        VkBufferMemoryBarrier pre_compute_src_barrier = {
+        VkBufferMemoryBarrier pre_pack_barrier = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
@@ -330,40 +292,13 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
         };
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL,
-                             1, &pre_compute_src_barrier, 0, NULL);
+                             1, &pre_pack_barrier, 0, NULL);
 
         VkBuffer pack_buffer = r->storage_buffers[BUFFER_COMPUTE_SRC].buffer;
-
-        VkBufferMemoryBarrier pre_compute_dst_barrier = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-            .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = pack_buffer,
-            .size = VK_WHOLE_SIZE
-        };
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL,
-                             1, &pre_compute_dst_barrier, 0, NULL);
-
         pgraph_vk_pack_depth_stencil(pg, surface, cmd, copy_buffer, pack_buffer,
                                      downscale);
 
-        VkBufferMemoryBarrier post_compute_src_barrier = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
-            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = copy_buffer,
-            .size = VK_WHOLE_SIZE
-        };
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                             &post_compute_src_barrier, 0, NULL);
-
-        VkBufferMemoryBarrier post_compute_dst_barrier = {
+        VkBufferMemoryBarrier post_pack_barrier = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
@@ -374,74 +309,56 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
         };
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                             &post_compute_dst_barrier, 0, NULL);
-
-        //
-        // Copy packed image over to staging buffer for host download
-        //
+                             &post_pack_barrier, 0, NULL);
 
         copy_buffer = r->storage_buffers[BUFFER_STAGING_DST].buffer;
+        VkBufferCopy buffer_copy_region = {
+            .size = packed_size,
+        };
+        vkCmdCopyBuffer(cmd, pack_buffer, copy_buffer, 1, &buffer_copy_region);
 
-        VkBufferMemoryBarrier pre_copy_dst_barrier = {
+        VkBufferMemoryBarrier barrier = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .buffer = copy_buffer,
             .size = VK_WHOLE_SIZE
         };
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                             &pre_copy_dst_barrier, 0, NULL);
-
-        VkBufferCopy buffer_copy_region = {
-            .size = packed_size,
-        };
-        vkCmdCopyBuffer(cmd, pack_buffer, copy_buffer, 1, &buffer_copy_region);
-
-        VkBufferMemoryBarrier post_copy_src_barrier = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = pack_buffer,
-            .size = VK_WHOLE_SIZE
-        };
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                             &post_copy_src_barrier, 0, NULL);
+                             VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 1,
+                             &barrier, 0, NULL);
     }
 
-    //
-    // Download image data to host
-    //
+    size_t downloaded_image_size = surface->host_fmt.host_bytes_per_pixel *
+                                   surface->width * surface->height;
+    assert((downloaded_image_size) <=
+           r->storage_buffers[BUFFER_STAGING_DST].buffer_size);
 
-    VkBufferMemoryBarrier post_copy_dst_barrier = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = copy_buffer,
-        .size = VK_WHOLE_SIZE
-    };
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 1,
-                         &post_copy_dst_barrier, 0, NULL);
+    pgraph_vk_transition_image_layout(
+        pg, cmd, surface->image, surface->host_fmt.vk_format,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        surface->color ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
+                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_1);
     pgraph_vk_end_single_time_commands(pg, cmd);
 
-    void *mapped_memory_ptr = NULL;
+    void *mapped_memory_ptr;
     VK_CHECK(vmaMapMemory(r->allocator,
                           r->storage_buffers[BUFFER_STAGING_DST].allocation,
                           &mapped_memory_ptr));
 
-    vmaInvalidateAllocation(r->allocator,
-                            r->storage_buffers[BUFFER_STAGING_DST].allocation,
-                            0, VK_WHOLE_SIZE);
+    // FIXME: Swizzle in shader
+    // FIXME: Eliminate this extra copy if we need to swizzle
+    // FIXME: Use native buffer copy options for pitch adjust
+
+    bool no_conversion_necessary =
+        surface->color || use_compute_to_convert_depth_stencil_format ||
+        surface->host_fmt.vk_format == VK_FORMAT_D16_UNORM;
+
+    assert(no_conversion_necessary);
 
     memcpy_image(gl_read_buf, mapped_memory_ptr, surface->pitch,
                  surface->width * surface->fmt.bytes_per_pixel,
@@ -451,7 +368,6 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
                    r->storage_buffers[BUFFER_STAGING_DST].allocation);
 
     if (surface->swizzle) {
-        // FIXME: Swizzle in shader
         swizzle_rect(swizzle_buf, surface->width, surface->height, pixels,
                      surface->pitch, surface->fmt.bytes_per_pixel);
         nv2a_profile_inc_counter(NV2A_PROF_SURF_SWIZZLE);
@@ -730,9 +646,6 @@ static void create_surface_image(PGRAPHState *pg, SurfaceBinding *surface)
     unsigned int width = surface->width, height = surface->height;
     pgraph_apply_scaling_factor(pg, &width, &height);
 
-    assert(!surface->image);
-    assert(!surface->image_scratch);
-
     NV2A_VK_DPRINTF(
         "Creating new surface image width=%d height=%d @ %08" HWADDR_PRIx,
         width, height, surface->vram_addr);
@@ -760,13 +673,22 @@ static void create_surface_image(PGRAPHState *pg, SurfaceBinding *surface)
     };
 
     VK_CHECK(vmaCreateImage(r->allocator, &image_create_info,
-                            &alloc_create_info, &surface->image,
-                            &surface->allocation, NULL));
+                    &alloc_create_info, &surface->image,
+                    &surface->allocation, NULL));
 
-    VK_CHECK(vmaCreateImage(r->allocator, &image_create_info,
-                            &alloc_create_info, &surface->image_scratch,
-                            &surface->allocation_scratch, NULL));
-    surface->image_scratch_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (pg->surface_scale_factor > 1) {
+        VkImageCreateInfo scratch_image_create_info = image_create_info;
+        scratch_image_create_info.extent.width = surface->width;
+        scratch_image_create_info.extent.height = surface->height;
+        VK_CHECK(
+            vmaCreateImage(r->allocator, &scratch_image_create_info,
+                           &alloc_create_info, &surface->image_scratch,
+                           &surface->allocation_scratch, NULL));
+        surface->image_scratch_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    } else {
+        surface->image_scratch = VK_NULL_HANDLE;
+        surface->allocation_scratch = VK_NULL_HANDLE;
+    }
 
     VkImageViewCreateInfo image_view_create_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -813,16 +735,11 @@ static void migrate_surface_image(SurfaceBinding *dst, SurfaceBinding *src)
 static void destroy_surface_image(PGRAPHVkState *r, SurfaceBinding *surface)
 {
     vkDestroyImageView(r->device, surface->image_view, NULL);
-    surface->image_view = VK_NULL_HANDLE;
-
     vmaDestroyImage(r->allocator, surface->image, surface->allocation);
-    surface->image = VK_NULL_HANDLE;
-    surface->allocation = VK_NULL_HANDLE;
-
-    vmaDestroyImage(r->allocator, surface->image_scratch,
-                    surface->allocation_scratch);
-    surface->image_scratch = VK_NULL_HANDLE;
-    surface->allocation_scratch = VK_NULL_HANDLE;
+    if (surface->image_scratch) {
+        vmaDestroyImage(r->allocator, surface->image_scratch,
+                        surface->allocation_scratch);
+    }
 }
 
 static bool check_invalid_surface_is_compatibile(SurfaceBinding *surface,
@@ -947,16 +864,33 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
         gl_read_buf = buf;
     }
 
-    //
-    // Upload image data from host to staging buffer
-    //
+    // FIXME: Eliminate extra copies
 
-    StorageBuffer *copy_buffer = &r->storage_buffers[BUFFER_STAGING_SRC];
+    VkBufferImageCopy regions[2];
+    int num_regions = 1;
+    regions[0] = (VkBufferImageCopy){
+        .imageSubresource.aspectMask = surface->color ?
+                                           VK_IMAGE_ASPECT_COLOR_BIT :
+                                           VK_IMAGE_ASPECT_DEPTH_BIT,
+        .imageSubresource.layerCount = 1,
+        .imageExtent = (VkExtent3D){ surface->width, surface->height, 1 },
+    };
+
+    if (surface->host_fmt.aspect & VK_IMAGE_ASPECT_STENCIL_BIT) {
+        regions[num_regions++] = (VkBufferImageCopy){
+            .imageSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT,
+            .imageSubresource.layerCount = 1,
+            .imageExtent = (VkExtent3D){ surface->width, surface->height, 1 },
+        };
+    }
+
     size_t uploaded_image_size = surface->height * surface->width *
                                  surface->fmt.bytes_per_pixel;
+
+    StorageBuffer *copy_buffer = &r->storage_buffers[BUFFER_STAGING_SRC];
     assert(uploaded_image_size <= copy_buffer->buffer_size);
 
-    void *mapped_memory_ptr = NULL;
+    void *mapped_memory_ptr;
     VK_CHECK(vmaMapMemory(r->allocator, copy_buffer->allocation,
                           &mapped_memory_ptr));
 
@@ -973,55 +907,14 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
                  surface->width * surface->fmt.bytes_per_pixel, surface->pitch,
                  surface->height);
 
-    vmaFlushAllocation(r->allocator, copy_buffer->allocation, 0, VK_WHOLE_SIZE);
     vmaUnmapMemory(r->allocator, copy_buffer->allocation);
 
     VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg);
-
-    VkBufferMemoryBarrier host_barrier = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = copy_buffer->buffer,
-        .size = VK_WHOLE_SIZE
-    };
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_HOST_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                         &host_barrier, 0, NULL);
-
-    // Set up image copy regions (which may be modified by compute unpack)
-
-    VkBufferImageCopy regions[2];
-    int num_regions = 0;
-
-    regions[num_regions++] = (VkBufferImageCopy){
-        .imageSubresource.aspectMask = surface->color ?
-                                           VK_IMAGE_ASPECT_COLOR_BIT :
-                                           VK_IMAGE_ASPECT_DEPTH_BIT,
-        .imageSubresource.layerCount = 1,
-        .imageExtent = (VkExtent3D){ surface->width, surface->height, 1 },
-    };
-
-    if (surface->host_fmt.aspect & VK_IMAGE_ASPECT_STENCIL_BIT) {
-        regions[num_regions++] = (VkBufferImageCopy){
-            .imageSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT,
-            .imageSubresource.layerCount = 1,
-            .imageExtent = (VkExtent3D){ surface->width, surface->height, 1 },
-        };
-    }
-
 
     unsigned int scaled_width = surface->width, scaled_height = surface->height;
     pgraph_apply_scaling_factor(pg, &scaled_width, &scaled_height);
 
     if (use_compute_to_convert_depth_stencil_format) {
-
-        //
-        // Copy packed image buffer to compute_dst for unpacking
-        //
-
         size_t packed_size = uploaded_image_size;
         VkBufferCopy buffer_copy_region = {
             .size = packed_size,
@@ -1036,69 +929,25 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
         size_t unpacked_size =
             unpacked_depth_image_size + unpacked_stencil_image_size;
 
-        VkBufferMemoryBarrier post_copy_src_barrier = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = copy_buffer->buffer,
-            .size = VK_WHOLE_SIZE
-        };
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                             &post_copy_src_barrier, 0, NULL);
-
-        //
-        // Unpack depth-stencil image into compute_src
-        //
-
-        VkBufferMemoryBarrier pre_unpack_src_barrier = {
+        VkBufferMemoryBarrier pre_unpack_barrier = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .buffer = r->storage_buffers[BUFFER_COMPUTE_DST].buffer,
-            .size = VK_WHOLE_SIZE
+            .size = packed_size
         };
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL,
-                             1, &pre_unpack_src_barrier, 0, NULL);
+                             1, &pre_unpack_barrier, 0, NULL);
 
         StorageBuffer *unpack_buffer = &r->storage_buffers[BUFFER_COMPUTE_SRC];
-
-        VkBufferMemoryBarrier pre_unpack_dst_barrier = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-            .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = unpack_buffer->buffer,
-            .size = unpacked_size
-        };
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 1,
-                             &pre_unpack_dst_barrier, 0, NULL);
-
         pgraph_vk_unpack_depth_stencil(
             pg, surface, cmd, r->storage_buffers[BUFFER_COMPUTE_DST].buffer,
             unpack_buffer->buffer);
 
-        VkBufferMemoryBarrier post_unpack_src_barrier = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
-            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = r->storage_buffers[BUFFER_COMPUTE_DST].buffer,
-            .size = VK_WHOLE_SIZE
-        };
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                             &post_unpack_src_barrier, 0, NULL);
-
-        VkBufferMemoryBarrier post_unpack_dst_barrier = {
+        VkBufferMemoryBarrier post_unpack_barrier = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
@@ -1109,7 +958,7 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
         };
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                             &post_unpack_dst_barrier, 0, NULL);
+                             &post_unpack_barrier, 0, NULL);
 
         // Already scaled during compute. Adjust copy regions.
         regions[0].imageExtent = (VkExtent3D){ scaled_width, scaled_height, 1 };
@@ -1121,12 +970,11 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
         copy_buffer = unpack_buffer;
     }
 
-    //
-    // Copy image data from buffer to staging image
-    //
+    bool upscale = !use_compute_to_convert_depth_stencil_format &&
+                   pg->surface_scale_factor > 1;
 
-    if (surface->image_scratch_current_layout !=
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    if (upscale && surface->image_scratch_current_layout !=
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
         pgraph_vk_transition_image_layout(pg, cmd, surface->image_scratch,
                                           surface->host_fmt.vk_format,
                                           surface->image_scratch_current_layout,
@@ -1135,44 +983,25 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     }
 
-    vkCmdCopyBufferToImage(cmd, copy_buffer->buffer, surface->image_scratch,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_regions,
-                           regions);
-
-    VkBufferMemoryBarrier post_copy_src_buffer_barrier = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = copy_buffer->buffer,
-        .size = VK_WHOLE_SIZE
-    };
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                         &post_copy_src_buffer_barrier, 0, NULL);
-
-    //
-    // Copy staging image to final image
-    //
-
-    pgraph_vk_transition_image_layout(pg, cmd, surface->image_scratch,
-                                      surface->host_fmt.vk_format,
-                                      surface->image_scratch_current_layout,
-                                      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    surface->image_scratch_current_layout =
-        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-
     pgraph_vk_transition_image_layout(
         pg, cmd, surface->image, surface->host_fmt.vk_format,
         surface->color ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-    bool upscale = pg->surface_scale_factor > 1 &&
-                   !use_compute_to_convert_depth_stencil_format;
+    vkCmdCopyBufferToImage(cmd, copy_buffer->buffer,
+                           upscale ? surface->image_scratch : surface->image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_regions,
+                           regions);
 
     if (upscale) {
+        pgraph_vk_transition_image_layout(pg, cmd, surface->image_scratch,
+                                          surface->host_fmt.vk_format,
+                                          surface->image_scratch_current_layout,
+                                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        surface->image_scratch_current_layout =
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
         unsigned int scaled_width = surface->width,
                      scaled_height = surface->height;
         pgraph_apply_scaling_factor(pg, &scaled_width, &scaled_height);
@@ -1197,26 +1026,6 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
                        surface->image_scratch_current_layout, surface->image,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitRegion,
                        surface->color ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
-    } else {
-        // Note: We should be able to vkCmdCopyBufferToImage directly into
-        // surface->image, but there is an apparent AMD Windows driver
-        // synchronization bug we'll hit when doing this. For this reason,
-        // always use a staging image.
-
-        for (int i = 0; i < num_regions; i++) {
-            VkImageAspectFlags aspect = regions[i].imageSubresource.aspectMask;
-            VkImageCopy copy_region = {
-                .srcSubresource.aspectMask = aspect,
-                .srcSubresource.layerCount = 1,
-                .dstSubresource.aspectMask = aspect,
-                .dstSubresource.layerCount = 1,
-                .extent = regions[i].imageExtent,
-            };
-            vkCmdCopyImage(cmd, surface->image_scratch,
-                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, surface->image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                           &copy_region);
-        }
     }
 
     pgraph_vk_transition_image_layout(
@@ -1361,7 +1170,6 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
     PGRAPHVkState *r = pg->vk_renderer_state;
 
     SurfaceBinding target;
-    memset(&target, 0, sizeof(target));
     populate_surface_binding_target(d, color, &target);
 
     Surface *pg_surface = color ? &pg->surface_color : &pg->surface_zeta;
