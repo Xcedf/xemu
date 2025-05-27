@@ -196,27 +196,12 @@ static void finalize_clear_shaders(PGRAPHState *pg)
     pgraph_vk_destroy_shader_module(r, r->solid_frag_module);
 }
 
-static void init_render_passes(PGRAPHVkState *r)
-{
-    r->render_passes = g_array_new(false, false, sizeof(RenderPass));
-}
-
-static void finalize_render_passes(PGRAPHVkState *r)
-{
-    for (int i = 0; i < r->render_passes->len; i++) {
-        RenderPass *p = &g_array_index(r->render_passes, RenderPass, i);
-        vkDestroyRenderPass(r->device, p->render_pass, NULL);
-    }
-    g_array_free(r->render_passes, true);
-}
-
 void pgraph_vk_init_pipelines(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
     init_pipeline_cache(pg);
     init_clear_shaders(pg);
-    init_render_passes(r);
 
     VkSemaphoreCreateInfo semaphore_info = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
@@ -237,7 +222,6 @@ void pgraph_vk_finalize_pipelines(PGRAPHState *pg)
 
     finalize_clear_shaders(pg);
     finalize_pipeline_cache(pg);
-    finalize_render_passes(r);
 
     vkDestroyFence(r->device, r->command_buffer_fence, NULL);
     vkDestroySemaphore(r->device, r->command_buffer_semaphore, NULL);
@@ -254,9 +238,11 @@ static void init_render_pass_state(PGRAPHState *pg, RenderPassState *state)
                                            VK_FORMAT_UNDEFINED;
 }
 
-static VkRenderPass create_render_pass(PGRAPHVkState *r, RenderPassState *state)
+static VkRenderPass create_render_pass(PGRAPHState *pg, RenderPassState *state)
 {
     NV2A_VK_DPRINTF("Creating render pass");
+
+    PGRAPHVkState *r = pg->vk_renderer_state;
 
     VkAttachmentDescription attachments[2];
     int num_attachments = 0;
@@ -342,24 +328,36 @@ static VkRenderPass create_render_pass(PGRAPHVkState *r, RenderPassState *state)
     return render_pass;
 }
 
-static VkRenderPass add_new_render_pass(PGRAPHVkState *r, RenderPassState *state)
+static VkRenderPass add_new_render_pass(PGRAPHState *pg, RenderPassState *state)
 {
-    RenderPass new_pass;
-    memcpy(&new_pass.state, state, sizeof(*state));
-    new_pass.render_pass = create_render_pass(r, state);
-    g_array_append_vals(r->render_passes, &new_pass, 1);
-    return new_pass.render_pass;
+    PGRAPHVkState *r = pg->vk_renderer_state;
+
+    if (r->render_passes_index == r->render_passes_capacity) {
+        int n_blocks = r->render_passes_capacity;
+        r->render_passes_capacity = n_blocks ? (n_blocks * 2) : 256;
+        r->render_passes =
+            g_realloc_n(r->render_passes, r->render_passes_capacity,
+                        sizeof(*r->render_passes));
+    }
+
+    RenderPass *rp = &r->render_passes[r->render_passes_index++];
+    memcpy(&rp->state, state, sizeof(*state));
+    rp->render_pass = create_render_pass(pg, state);
+
+    return rp->render_pass;
 }
 
-static VkRenderPass get_render_pass(PGRAPHVkState *r, RenderPassState *state)
+static VkRenderPass get_render_pass(PGRAPHState *pg, RenderPassState *state)
 {
-    for (int i = 0; i < r->render_passes->len; i++) {
-        RenderPass *p = &g_array_index(r->render_passes, RenderPass, i);
-        if (!memcmp(&p->state, state, sizeof(*state))) {
-            return p->render_pass;
+    PGRAPHVkState *r = pg->vk_renderer_state;
+
+    for (int i = 0; i < r->render_passes_index; i++) {
+        if (!memcmp(&r->render_passes[i].state, state, sizeof(*state))) {
+            return r->render_passes[i].render_pass;
         }
     }
-    return add_new_render_pass(r, state);
+
+    return add_new_render_pass(pg, state);
 }
 
 static void create_frame_buffer(PGRAPHState *pg)
@@ -582,7 +580,7 @@ static void create_clear_pipeline(PGRAPHState *pg)
         .pColorBlendState = &color_blending,
         .pDynamicState = &dynamic_state,
         .layout = layout,
-        .renderPass = get_render_pass(r, &key.render_pass_state),
+        .renderPass = get_render_pass(pg, &key.render_pass_state),
         .subpass = 0,
         .basePipelineHandle = VK_NULL_HANDLE,
     };
@@ -1023,7 +1021,7 @@ static void create_pipeline(PGRAPHState *pg)
         .pColorBlendState = &color_blending,
         .pDynamicState = &dynamic_state,
         .layout = layout,
-        .renderPass = get_render_pass(r, &key.render_pass_state),
+        .renderPass = get_render_pass(pg, &key.render_pass_state),
         .subpass = 0,
         .basePipelineHandle = VK_NULL_HANDLE,
     };

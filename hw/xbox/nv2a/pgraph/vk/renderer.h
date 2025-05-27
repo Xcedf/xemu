@@ -305,7 +305,9 @@ typedef struct PGRAPHVkState {
     bool framebuffer_dirty;
 
     VkRenderPass render_pass;
-    GArray *render_passes; // RenderPass
+    RenderPass *render_passes;
+    int render_passes_index;
+    int render_passes_capacity;
     bool in_render_pass;
     bool in_draw;
 
@@ -348,7 +350,6 @@ typedef struct PGRAPHVkState {
     TextureBinding *texture_bindings[NV2A_MAX_TEXTURES];
     TextureBinding dummy_texture;
     bool texture_bindings_changed;
-    VkFormatProperties *texture_format_properties;
 
     Lru shader_cache;
     ShaderBinding *shader_cache_entries;
@@ -382,7 +383,6 @@ void pgraph_vk_check_memory_budget(PGRAPHState *pg);
 
 // debug.c
 void pgraph_vk_debug_init(void);
-void pgraph_vk_insert_debug_marker(PGRAPHVkState *r, VkCommandBuffer cmd, const char* name, float color[4]);
 
 // instance.c
 void pgraph_vk_init_instance(PGRAPHState *pg, Error **errp);
