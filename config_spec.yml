@@ -169,6 +169,9 @@ display:
     show_menubar:
       type: bool
       default: true
+    show_fps:
+      type: bool
+      default: true
     show_notifications:
       type: bool
       default: true
