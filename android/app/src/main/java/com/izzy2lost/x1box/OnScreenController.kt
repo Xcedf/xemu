@@ -27,7 +27,6 @@ class OnScreenController @JvmOverloads constructor(
     A, B, X, Y,
     DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT,
     LEFT_TRIGGER, RIGHT_TRIGGER,
-    LEFT_BUMPER, RIGHT_BUMPER,
     START, BACK,
     LEFT_STICK_BUTTON, RIGHT_STICK_BUTTON,
     BLACK, WHITE
@@ -78,16 +77,16 @@ class OnScreenController @JvmOverloads constructor(
     val h = height.toFloat()
     
     // Button sizes - made D-pad smaller
-    val faceButtonRadius = w * 0.035f
+    val faceButtonRadius = w * 0.032f
     val dpadButtonRadius = w * 0.025f
-    val shoulderButtonRadius = w * 0.042f
+    val shoulderButtonRadius = w * 0.034f
     val smallButtonRadius = w * 0.022f
     val stickRadius = w * 0.07f
 
     // Face buttons (right side) - A, B, X, Y in diamond formation
     val faceButtonCenterX = w * 0.88f
     val faceButtonCenterY = h * 0.55f
-    val faceButtonSpacing = w * 0.07f
+    val faceButtonSpacing = w * 0.064f
 
     buttons[Button.A] = ButtonState(
       PointF(faceButtonCenterX, faceButtonCenterY + faceButtonSpacing),
@@ -108,7 +107,7 @@ class OnScreenController @JvmOverloads constructor(
 
     // D-Pad (bottom left corner) - smaller buttons
     val dpadCenterX = w * 0.12f
-    val dpadCenterY = h * 0.85f
+    val dpadCenterY = h * 0.83f
     val dpadSpacing = w * 0.045f
 
     buttons[Button.DPAD_UP] = ButtonState(
@@ -128,35 +127,18 @@ class OnScreenController @JvmOverloads constructor(
       dpadButtonRadius
     )
 
-    // Shoulder buttons (triggers and bumpers)
+    // Trigger buttons - smaller and aligned to top corners
+    val shoulderEdgeMargin = shoulderButtonRadius + (w * 0.02f)
     buttons[Button.LEFT_TRIGGER] = ButtonState(
-      PointF(w * 0.12f, h * 0.08f),
+      PointF(shoulderEdgeMargin, shoulderEdgeMargin),
       shoulderButtonRadius
     )
     buttons[Button.RIGHT_TRIGGER] = ButtonState(
-      PointF(w * 0.88f, h * 0.08f),
-      shoulderButtonRadius
-    )
-    buttons[Button.LEFT_BUMPER] = ButtonState(
-      PointF(w * 0.12f, h * 0.16f),
-      shoulderButtonRadius
-    )
-    buttons[Button.RIGHT_BUMPER] = ButtonState(
-      PointF(w * 0.88f, h * 0.16f),
+      PointF(w - shoulderEdgeMargin, shoulderEdgeMargin),
       shoulderButtonRadius
     )
 
-    // Center buttons
-    buttons[Button.START] = ButtonState(
-      PointF(w * 0.58f, h * 0.4f),
-      smallButtonRadius
-    )
-    buttons[Button.BACK] = ButtonState(
-      PointF(w * 0.42f, h * 0.4f),
-      smallButtonRadius
-    )
-
-    // Analog sticks - right stick moved down
+    // Analog sticks
     sticks[Stick.LEFT] = StickState(
       PointF(w * 0.18f, h * 0.45f),
       stickRadius
@@ -166,13 +148,29 @@ class OnScreenController @JvmOverloads constructor(
       stickRadius
     )
 
-    // Black and White buttons - moved to right of right analog stick
+    // Center buttons - moved near bottom, between D-pad and right stick
+    val centerButtonsBaseX = (dpadCenterX + sticks[Stick.RIGHT]!!.center.x) * 0.5f
+    val centerButtonsY = h * 0.9f
+    val centerButtonSpacing = smallButtonRadius * 3.4f
+    buttons[Button.BACK] = ButtonState(
+      PointF(centerButtonsBaseX - (centerButtonSpacing * 0.5f), centerButtonsY),
+      smallButtonRadius
+    )
+    buttons[Button.START] = ButtonState(
+      PointF(centerButtonsBaseX + (centerButtonSpacing * 0.5f), centerButtonsY),
+      smallButtonRadius
+    )
+
+    // Black and White buttons - black to the right of white
+    val whiteBlackY = h * 0.8f
+    val whiteX = w * 0.75f
+    val whiteBlackSpacing = smallButtonRadius * 2.6f
     buttons[Button.WHITE] = ButtonState(
-      PointF(w * 0.75f, h * 0.78f),
+      PointF(whiteX, whiteBlackY),
       smallButtonRadius
     )
     buttons[Button.BLACK] = ButtonState(
-      PointF(w * 0.75f, h * 0.86f),
+      PointF(whiteX + whiteBlackSpacing, whiteBlackY),
       smallButtonRadius
     )
 
@@ -281,8 +279,6 @@ class OnScreenController @JvmOverloads constructor(
       Button.DPAD_RIGHT -> "→"
       Button.LEFT_TRIGGER -> "LT"
       Button.RIGHT_TRIGGER -> "RT"
-      Button.LEFT_BUMPER -> "LB"
-      Button.RIGHT_BUMPER -> "RB"
       Button.START -> "▶"
       Button.BACK -> "◀"
       Button.BLACK -> "BK"

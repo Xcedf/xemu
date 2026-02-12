@@ -511,6 +511,9 @@ extern "C" int SDL_main(int argc, char* argv[]) {
   (void)argv;
 
   LogInfo("SDL_main: start");
+  // Prefer AAudio on Android, but keep Android AudioTrack as fallback.
+  SDL_SetHintWithPriority(SDL_HINT_AUDIODRIVER, "aaudio,android",
+                          SDL_HINT_OVERRIDE);
   SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
   SDL_DisableScreenSaver();
 

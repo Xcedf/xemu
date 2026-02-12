@@ -90,16 +90,14 @@ class ControllerInputBridge : OnScreenController.ControllerListener {
       OnScreenController.Button.DPAD_DOWN -> KeyEvent.KEYCODE_DPAD_DOWN
       OnScreenController.Button.DPAD_LEFT -> KeyEvent.KEYCODE_DPAD_LEFT
       OnScreenController.Button.DPAD_RIGHT -> KeyEvent.KEYCODE_DPAD_RIGHT
-      OnScreenController.Button.LEFT_BUMPER -> KeyEvent.KEYCODE_BUTTON_L1
-      OnScreenController.Button.RIGHT_BUMPER -> KeyEvent.KEYCODE_BUTTON_R1
       OnScreenController.Button.LEFT_TRIGGER -> KeyEvent.KEYCODE_BUTTON_L2
       OnScreenController.Button.RIGHT_TRIGGER -> KeyEvent.KEYCODE_BUTTON_R2
       OnScreenController.Button.START -> KeyEvent.KEYCODE_BUTTON_START
       OnScreenController.Button.BACK -> KeyEvent.KEYCODE_BUTTON_SELECT
       OnScreenController.Button.LEFT_STICK_BUTTON -> KeyEvent.KEYCODE_BUTTON_THUMBL
       OnScreenController.Button.RIGHT_STICK_BUTTON -> KeyEvent.KEYCODE_BUTTON_THUMBR
-      OnScreenController.Button.BLACK -> KeyEvent.KEYCODE_BUTTON_L2
-      OnScreenController.Button.WHITE -> KeyEvent.KEYCODE_BUTTON_R2
+      OnScreenController.Button.WHITE -> KeyEvent.KEYCODE_BUTTON_L1
+      OnScreenController.Button.BLACK -> KeyEvent.KEYCODE_BUTTON_R1
     }
   }
 }
