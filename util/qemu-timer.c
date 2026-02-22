@@ -356,7 +356,6 @@ int qemu_poll_ns(GPollFD *fds, guint nfds, int64_t timeout)
             int64_t sleep_ns = timeout - XBOX_BUSYWAIT_TAIL_NS;
             ts_sleep.tv_sec = 0;
             ts_sleep.tv_nsec = sleep_ns;
-            nanosleep(&ts_sleep, NULL);
         }
 #if defined(__aarch64__)
         uint64_t freq, start, ticks_to_wait;
