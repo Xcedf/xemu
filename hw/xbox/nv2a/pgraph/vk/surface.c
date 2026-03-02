@@ -454,9 +454,9 @@ static void download_surface_complete_deferred(NV2AState *d)
         return;
     }
 
-    int64_t _t0 = nv2a_clock_ns();
+    int64_t _t0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     pgraph_vk_finish(pg, VK_FINISH_REASON_SURFACE_DOWN);
-    int64_t _t1 = nv2a_clock_ns();
+    int64_t _t1 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
 
     StorageBuffer *staging = &r->storage_buffers[BUFFER_STAGING_DST];
 
@@ -483,7 +483,7 @@ static void download_surface_complete_deferred(NV2AState *d)
     }
 
     g_nv2a_stats.surf_working.df_flush_ns += _t1 - _t0;
-    g_nv2a_stats.surf_working.df_read_ns += nv2a_clock_ns() - _t1;
+    g_nv2a_stats.surf_working.df_read_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _t1;
 
     r->num_deferred_downloads = 0;
     r->staging_dst_offset = 0;
@@ -2065,16 +2065,16 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
 
     g_nv2a_stats.surf_working.update_calls++;
 
-    int64_t _st0 = nv2a_clock_ns();
+    int64_t _st0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     SurfaceBinding target;
     memset(&target, 0, sizeof(target));
     target.invalidation_frame = -1;
     populate_surface_binding_target(d, color, &target);
-    g_nv2a_stats.surf_working.populate_ns += nv2a_clock_ns() - _st0;
+    g_nv2a_stats.surf_working.populate_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _st0;
 
     Surface *pg_surface = color ? &pg->surface_color : &pg->surface_zeta;
 
-    int64_t _st1 = nv2a_clock_ns();
+    int64_t _st1 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     bool mem_dirty = false;
     if (!tcg_enabled()) {
         ram_addr_t start = r->vram_ram_addr + target.vram_addr;
@@ -2096,22 +2096,22 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
             page += num;
         }
     }
-    g_nv2a_stats.surf_working.dirty_ns += nv2a_clock_ns() - _st1;
+    g_nv2a_stats.surf_working.dirty_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _st1;
 
     SurfaceBinding *current_binding = color ? r->color_binding
                                             : r->zeta_binding;
 
     if (!current_binding ||
         (upload && (pg_surface->buffer_dirty || mem_dirty))) {
-        int64_t _gt0 = nv2a_clock_ns();
+        int64_t _gt0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         // FIXME: We don't need to be so aggressive flushing the command list
         // pgraph_vk_finish(pg, VK_FINISH_REASON_SURFACE_CREATE);
         pgraph_vk_ensure_not_in_render_pass(pg);
 
         unbind_surface(d, color);
-        g_nv2a_stats.surf_working.enrp_ns += nv2a_clock_ns() - _gt0;
+        g_nv2a_stats.surf_working.enrp_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _gt0;
 
-        int64_t _gt1 = nv2a_clock_ns();
+        int64_t _gt1 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         SurfaceBinding *surface = pgraph_vk_surface_get(d, target.vram_addr);
         if (surface != NULL) {
             // FIXME: Support same color/zeta surface target? In the mean time,
@@ -2198,7 +2198,7 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
                 surface->upload_pending |= mem_dirty;
                 pg->surface_zeta.buffer_dirty |= color;
                 should_create = false;
-                g_nv2a_stats.surf_working.lk_hit_ns += nv2a_clock_ns() - _gt1;
+                g_nv2a_stats.surf_working.lk_hit_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _gt1;
             } else {
                 trace_nv2a_pgraph_surface_evict_reason(
                     "incompatible", surface->vram_addr);
@@ -2235,15 +2235,15 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
                         DIRTY_MEMORY_VGA);
                 }
                 shelve_surface(d, surface);
-                g_nv2a_stats.surf_working.lk_evict_ns += nv2a_clock_ns() - _gt1;
+                g_nv2a_stats.surf_working.lk_evict_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _gt1;
                 g_nv2a_stats.surf_working.evict_count++;
             }
         } else {
-            g_nv2a_stats.surf_working.lk_nosurf_ns += nv2a_clock_ns() - _gt1;
+            g_nv2a_stats.surf_working.lk_nosurf_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _gt1;
         }
 
         if (should_create) {
-            int64_t _gt2 = nv2a_clock_ns();
+            int64_t _gt2 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
             bool unshelved = false;
             surface = get_shelved_surface(r, target.vram_addr, &target);
             if (surface) {
@@ -2258,7 +2258,7 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
                     create_surface_image(pg, &target);
                 }
             }
-            g_nv2a_stats.surf_working.create_ns += nv2a_clock_ns() - _gt2;
+            g_nv2a_stats.surf_working.create_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _gt2;
 
             *surface = target;
             set_surface_label(pg, surface);
@@ -2273,9 +2273,9 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
                 surface->initialized = true;
             }
 
-            int64_t _gt3 = nv2a_clock_ns();
+            int64_t _gt3 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
             surface_put(d, surface);
-            g_nv2a_stats.surf_working.put_ns += nv2a_clock_ns() - _gt3;
+            g_nv2a_stats.surf_working.put_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _gt3;
 
             // FIXME: Refactor
             pg->surface_binding_dim.width = target.width;
@@ -2305,9 +2305,9 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
                  surface->shape.clip_x, surface->shape.clip_width,
                  surface->shape.clip_y, surface->shape.clip_height, surface->pitch);
 
-        int64_t _gt4 = nv2a_clock_ns();
+        int64_t _gt4 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         bind_surface(r, surface);
-        g_nv2a_stats.surf_working.bind_ns += nv2a_clock_ns() - _gt4;
+        g_nv2a_stats.surf_working.bind_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _gt4;
 
         pg_surface->buffer_dirty = false;
         if (should_create) {
@@ -2320,7 +2320,7 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
     }
 
     if (!upload && pg_surface->draw_dirty) {
-        int64_t _st3 = nv2a_clock_ns();
+        int64_t _st3 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         if (!tcg_enabled()) {
             // FIXME: Cannot monitor for reads/writes; flush now
             download_surface(d, color ? r->color_binding : r->zeta_binding,
@@ -2329,7 +2329,7 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
 
         pg_surface->write_enabled_cache = false;
         pg_surface->draw_dirty = false;
-        g_nv2a_stats.surf_working.download_ns += nv2a_clock_ns() - _st3;
+        g_nv2a_stats.surf_working.download_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _st3;
         g_nv2a_stats.surf_working.download_count++;
     }
 }
@@ -2397,7 +2397,7 @@ void pgraph_vk_surface_update(NV2AState *d, bool upload, bool color_write,
     bool swizzle = (pg->surface_type == NV097_SET_SURFACE_FORMAT_TYPE_SWIZZLE);
 
     {
-        int64_t _su0 = nv2a_clock_ns();
+        int64_t _su0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         if (r->color_binding) {
             r->color_binding->frame_time = pg->frame_time;
             if (upload) {
@@ -2417,7 +2417,7 @@ void pgraph_vk_surface_update(NV2AState *d, bool upload, bool color_write,
                 g_nv2a_stats.surf_working.upload_count++;
             }
         }
-        g_nv2a_stats.surf_working.upload_ns += nv2a_clock_ns() - _su0;
+        g_nv2a_stats.surf_working.upload_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _su0;
     }
 
     // Sanity check color and zeta dimensions match
@@ -2427,10 +2427,10 @@ void pgraph_vk_surface_update(NV2AState *d, bool upload, bool color_write,
     }
 
     {
-        int64_t _se0 = nv2a_clock_ns();
+        int64_t _se0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         expire_old_surfaces(d);
         prune_invalid_surfaces(r, num_invalid_surfaces_to_keep);
-        g_nv2a_stats.surf_working.expire_ns += nv2a_clock_ns() - _se0;
+        g_nv2a_stats.surf_working.expire_ns += qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _se0;
     }
 
     NV2A_PHASE_TIMER_END(surface_update);
