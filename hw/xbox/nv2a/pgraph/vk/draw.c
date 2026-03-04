@@ -916,7 +916,7 @@ static void create_pipeline(PGRAPHState *pg)
     NV2AState *d = container_of(pg, NV2AState, pgraph);
     PGRAPHVkState *r = pg->vk_renderer_state;
 
-#if OPT_PIPELINE_EARLY_EXIT
+#if 0 //OPT_PIPELINE_EARLY_EXIT
     if (r->pipeline_binding &&
         !r->shader_bindings_changed &&
         !r->pipeline_state_dirty &&
@@ -1700,6 +1700,11 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
             static int dbg_finish_count = 0;
             bool deferred = (finish_reason == VK_FINISH_REASON_FLIP_STALL ||
                              finish_reason == VK_FINISH_REASON_PRESENTING);
+            if (g_xemu_fast_fences) {
+                deferred = deferred ||
+                    finish_reason == VK_FINISH_REASON_NEED_BUFFER_SPACE ||
+                    finish_reason == VK_FINISH_REASON_VERTEX_BUFFER_DIRTY;
+            }
             if (dbg_finish_count < 200) {
                 DBG_LOG("[FIN] reason=%d deferred=%d frame=%d submit=%d",
                         finish_reason, deferred, r->current_frame,
