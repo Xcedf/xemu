@@ -169,6 +169,7 @@ typedef struct PGRAPHState {
     hwaddr dma_a, dma_b;
     bool texture_dirty[NV2A_MAX_TEXTURES];
     uint32_t texture_state_gen;
+    uint32_t vertex_attr_gen;
 
     bool texture_matrix_enable[NV2A_MAX_TEXTURES];
 
@@ -328,6 +329,14 @@ void pgraph_clear_dirty_reg_map(PGRAPHState *pg);
 static inline bool pgraph_is_reg_dirty(PGRAPHState *pg, unsigned int reg)
 {
     return test_bit(reg / sizeof(uint32_t), pg->regs_dirty);
+}
+
+static inline bool pgraph_has_dirty_regs(PGRAPHState *pg)
+{
+    for (int i = 0; i < ARRAY_SIZE(pg->regs_dirty); i++) {
+        if (pg->regs_dirty[i]) return true;
+    }
+    return false;
 }
 
 static inline bool pgraph_is_texture_stage_active(PGRAPHState *pg, unsigned int stage)
