@@ -1573,9 +1573,9 @@ void sdl2_gl_refresh(DisplayChangeListener *dcl)
     android_log_gl_error("refresh-makecurrent");
 #endif
     update_fps();
-    g_android_frame_counter++;
 
 #ifdef __ANDROID__
+    g_android_frame_counter++;
     static int force_cpu_blit_mode = -2; /* -2=uninit, -1=auto, 0=off, 1=on */
     if (force_cpu_blit_mode == -2) {
         const char *env = SDL_getenv("XEMU_ANDROID_FORCE_CPU_BLIT");

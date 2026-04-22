@@ -18,7 +18,9 @@
  */
 
 #include "renderer.h"
+#ifdef __ANDROID__
 #include <EGL/egl.h>
+#endif
 #include <math.h>
 
 #if HAVE_EXTERNAL_MEMORY
