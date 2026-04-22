@@ -491,8 +491,19 @@ static void download_surface(NV2AState *d, SurfaceBinding *surface, bool force)
 void pgraph_vk_wait_for_surface_download(SurfaceBinding *surface)
 {
     NV2AState *d = g_nv2a;
+    bool require_download = qatomic_read(&surface->draw_dirty);
 
-    if (qatomic_read(&surface->draw_dirty)) {
+#ifdef __ANDROID__
+    /*
+     * Android Vulkan currently presents through the CPU/VGA fallback path.
+     * Force framebuffer surface download so fallback upload sees fresh pixels.
+     */
+    if (!d->pgraph.vk_renderer_state->display.use_external_memory) {
+        require_download = true;
+    }
+#endif
+
+    if (require_download) {
         qemu_mutex_lock(&d->pfifo.lock);
         qemu_event_reset(&d->pgraph.vk_renderer_state->downloads_complete);
         qatomic_set(&surface->download_pending, true);
@@ -1684,7 +1695,11 @@ void pgraph_vk_init_surfaces(PGRAPHState *pg)
     bool color_formats_supported = check_surface_internal_formats_supported(
         r, kelvin_surface_color_format_vk_map,
         ARRAY_SIZE(kelvin_surface_color_format_vk_map));
-    assert(color_formats_supported);
+    if (!color_formats_supported) {
+        fprintf(stderr,
+                "Warning: Some Vulkan surface color formats are unsupported; "
+                "continuing with best-effort mapping.\n");
+    }
 
     // Check if the device supports preferred VK_FORMAT_D24_UNORM_S8_UINT
     // format, fall back to D32_SFLOAT_S8_UINT otherwise.
@@ -1698,7 +1713,11 @@ void pgraph_vk_init_surfaces(PGRAPHState *pg)
         r->kelvin_surface_zeta_vk_map[NV097_SET_SURFACE_FORMAT_ZETA_Z24S8] =
             zeta_d32_sfloat_s8_uint;
     } else {
-        assert(!"No suitable depth-stencil format supported");
+        fprintf(stderr,
+                "Warning: No suitable Vulkan Z24S8 depth-stencil format; "
+                "falling back to Z16 mapping.\n");
+        r->kelvin_surface_zeta_vk_map[NV097_SET_SURFACE_FORMAT_ZETA_Z24S8] =
+            zeta_d16;
     }
 
     QTAILQ_INIT(&r->surfaces);

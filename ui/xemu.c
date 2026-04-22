@@ -224,7 +224,8 @@ static bool android_blit_init(void)
                      "uniform sampler2D u_tex;\n"
                      "out vec4 out_Color;\n"
                      "void main() {\n"
-                     "  out_Color = texture(u_tex, v_uv);\n"
+                     "  vec4 c = texture(u_tex, v_uv);\n"
+                     "  out_Color = vec4(c.rgb, 1.0);\n"
                      "}\n";
 
     GLuint vshader = android_gl_compile_shader(GL_VERTEX_SHADER, vs);
@@ -292,6 +293,11 @@ static void android_blit_frame(GLuint tex, bool flip)
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, w, h);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
     glUseProgram(g_android_blit_prog);
     glUniform1i(g_android_blit_tex_loc, 0);
     glUniform1i(g_android_blit_flip_loc, flip ? 1 : 0);
@@ -1409,10 +1415,12 @@ void xb_surface_gl_create_texture(DisplaySurface *surface)
     }
     glBindTexture(GL_TEXTURE_2D, surface->texture);
     const void *pixels = surface_data(surface);
+    GLenum upload_format = surface->glformat;
+    GLenum upload_type = surface->gltype;
 #ifdef __ANDROID__
     uint8_t *converted = NULL;
     bool use_row_length = true;
-    if (surface->glformat == GL_BGRA_EXT) {
+    if (upload_format == GL_BGRA_EXT) {
         const int width = surface_width(surface);
         const int height = surface_height(surface);
         const int stride = surface_stride(surface);
@@ -1432,7 +1440,7 @@ void xb_surface_gl_create_texture(DisplaySurface *surface)
                 dst[x * 4 + 3] = a;
             }
         }
-        surface->glformat = GL_RGBA;
+        upload_format = GL_RGBA;
         pixels = converted;
         use_row_length = false;
     }
@@ -1446,7 +1454,7 @@ void xb_surface_gl_create_texture(DisplaySurface *surface)
     glTexImage2D(GL_TEXTURE_2D, 0, internal_format,
                  surface_width(surface),
                  surface_height(surface),
-                 0, surface->glformat, surface->gltype,
+                 0, upload_format, upload_type,
                  pixels);
 #ifdef __ANDROID__
     if (use_row_length) {

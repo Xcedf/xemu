@@ -122,10 +122,6 @@ static void pgraph_gl_init(NV2AState *d, Error **errp)
 #endif
 
 #ifdef __ANDROID__
-    pgraph_gl_determine_gpu_properties();
-#endif
-
-#ifdef __ANDROID__
     /* DXT textures may be available via extension on Android. */
     if (!glo_check_extension("GL_EXT_texture_compression_s3tc")) {
         fprintf(stderr, "Warning: GL_EXT_texture_compression_s3tc not available\n");

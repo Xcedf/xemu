@@ -592,12 +592,12 @@ static void destroy_current_display_image(PGRAPHState *pg)
     destroy_frame_buffer(pg);
 
 #if HAVE_EXTERNAL_MEMORY
-    if (p_glDeleteMemoryObjectsEXT) {
+    if (d->gl_texture_id && p_glDeleteMemoryObjectsEXT) {
         glDeleteTextures(1, &d->gl_texture_id);
     }
     d->gl_texture_id = 0;
 
-    if (p_glDeleteMemoryObjectsEXT) {
+    if (d->gl_memory_obj && p_glDeleteMemoryObjectsEXT) {
         p_glDeleteMemoryObjectsEXT(1, &d->gl_memory_obj);
     }
     d->gl_memory_obj = 0;
@@ -632,24 +632,33 @@ static bool create_display_image(PGRAPHState *pg, int width, int height)
         destroy_current_display_image(pg);
     }
 
+#if HAVE_EXTERNAL_MEMORY
     const GLint gl_internal_format = GL_RGBA8;
+#endif
     bool use_optimal_tiling = true;
+#if HAVE_EXTERNAL_MEMORY
+    bool use_external_memory = d->use_external_memory;
+#else
+    bool use_external_memory = false;
+#endif
 
 #if HAVE_EXTERNAL_MEMORY
-    GLint num_tiling_types;
-    glGetInternalformativ(GL_TEXTURE_2D, gl_internal_format,
-                          GL_NUM_TILING_TYPES_EXT, 1, &num_tiling_types);
-    // XXX: Apparently on AMD GL_OPTIMAL_TILING_EXT is reported to be
-    // supported, but doesn't work? On nVidia, GL_LINEAR_TILING_EXT may not
-    // be supported so we must use optimal. Default to optimal unless
-    // linear is explicitly specified...
-    GLint tiling_types[num_tiling_types];
-    glGetInternalformativ(GL_TEXTURE_2D, gl_internal_format,
-                          GL_TILING_TYPES_EXT, num_tiling_types, tiling_types);
-    for (int i = 0; i < num_tiling_types; i++) {
-        if (tiling_types[i] == GL_LINEAR_TILING_EXT) {
-            use_optimal_tiling = false;
-            break;
+    if (use_external_memory) {
+        GLint num_tiling_types;
+        glGetInternalformativ(GL_TEXTURE_2D, gl_internal_format,
+                              GL_NUM_TILING_TYPES_EXT, 1, &num_tiling_types);
+        // XXX: Apparently on AMD GL_OPTIMAL_TILING_EXT is reported to be
+        // supported, but doesn't work? On nVidia, GL_LINEAR_TILING_EXT may not
+        // be supported so we must use optimal. Default to optimal unless
+        // linear is explicitly specified...
+        GLint tiling_types[num_tiling_types];
+        glGetInternalformativ(GL_TEXTURE_2D, gl_internal_format,
+                              GL_TILING_TYPES_EXT, num_tiling_types, tiling_types);
+        for (int i = 0; i < num_tiling_types; i++) {
+            if (tiling_types[i] == GL_LINEAR_TILING_EXT) {
+                use_optimal_tiling = false;
+                break;
+            }
         }
     }
 #endif
@@ -685,7 +694,11 @@ static bool create_display_image(PGRAPHState *pg, int width, int height)
         .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR,
 #endif
     };
-    image_create_info.pNext = &external_memory_image_create_info;
+    if (use_external_memory) {
+        image_create_info.pNext = &external_memory_image_create_info;
+    } else {
+        image_create_info.pNext = NULL;
+    }
 
     VkResult result = vkCreateImage(r->device, &image_create_info, NULL, &d->image);
     if (result != VK_SUCCESS) {
@@ -741,14 +754,17 @@ static bool create_display_image(PGRAPHState *pg, int width, int height)
 #endif
             ,
     };
-    void *alloc_p_next = &export_memory_alloc_info;
+    void *alloc_p_next = NULL;
     VkMemoryDedicatedAllocateInfo dedicated_alloc_info = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
         .image = d->image,
     };
     if (dedicated_requirements.requiresDedicatedAllocation == VK_TRUE) {
-        dedicated_alloc_info.pNext = alloc_p_next;
         alloc_p_next = &dedicated_alloc_info;
+    }
+    if (use_external_memory) {
+        export_memory_alloc_info.pNext = alloc_p_next;
+        alloc_p_next = &export_memory_alloc_info;
     }
     alloc_info.pNext = alloc_p_next;
 
@@ -795,17 +811,13 @@ static bool create_display_image(PGRAPHState *pg, int width, int height)
     }
 
 #if HAVE_EXTERNAL_MEMORY
-    if (!load_gl_external_memory_symbols()) {
+    if (use_external_memory && !load_gl_external_memory_symbols()) {
         fprintf(stderr, "Vulkan display: GL_EXT_memory_object not available\n");
-        vkDestroyImageView(r->device, d->image_view, NULL);
-        d->image_view = VK_NULL_HANDLE;
-        vkFreeMemory(r->device, d->memory, NULL);
-        d->memory = VK_NULL_HANDLE;
-        vkDestroyImage(r->device, d->image, NULL);
-        d->image = VK_NULL_HANDLE;
-        return false;
+        d->use_external_memory = false;
+        use_external_memory = false;
     }
 
+    if (use_external_memory) {
 #ifdef WIN32
 
     VkMemoryGetWin32HandleInfoKHR handle_info = {
@@ -873,6 +885,7 @@ static bool create_display_image(PGRAPHState *pg, int width, int height)
         vkDestroyImage(r->device, d->image, NULL);
         d->image = VK_NULL_HANDLE;
         return false;
+    }
     }
 
 #endif // HAVE_EXTERNAL_MEMORY

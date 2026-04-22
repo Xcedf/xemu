@@ -52,6 +52,7 @@ static void pgraph_vk_init(NV2AState *d, Error **errp)
     pg->vk_renderer_state = (PGRAPHVkState *)g_malloc0(sizeof(PGRAPHVkState));
 
 #if HAVE_EXTERNAL_MEMORY
+    bool use_external_memory = false;
 #ifdef __ANDROID__
     if (!g_gl_context) {
         // On Android, we need to ensure the main GL context is accessible
@@ -65,15 +66,22 @@ static void pgraph_vk_init(NV2AState *d, Error **errp)
         }
     }
 #endif
-    if (!g_gl_context) {
-        error_setg(errp, "Failed to create GL offscreen context for Vulkan display");
-        return;
+    if (g_gl_context) {
+        glo_set_current(g_gl_context);
+        use_external_memory = pgraph_vk_gl_external_memory_available();
     }
-    glo_set_current(g_gl_context);
-    if (!pgraph_vk_gl_external_memory_available()) {
-        error_setg(errp, "GL_EXT_memory_object not available for Vulkan display");
-        return;
+    if (!use_external_memory) {
+#ifdef __ANDROID__
+        __android_log_print(ANDROID_LOG_WARN, "xemu-android",
+                            "pgraph_vk_init: external memory interop unavailable, using download fallback");
+#endif
     }
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "pgraph_vk_init: external memory interop=%s",
+                        use_external_memory ? "enabled" : "disabled");
+#endif
+    pg->vk_renderer_state->display.use_external_memory = use_external_memory;
 #endif
 
     pgraph_vk_debug_init();
@@ -83,20 +91,67 @@ static void pgraph_vk_init(NV2AState *d, Error **errp)
         return;
     }
 
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: command_buffers");
+#endif
     pgraph_vk_init_command_buffers(pg);
-    pgraph_vk_init_buffers(d);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: buffers");
+#endif
+    if (!pgraph_vk_init_buffers(d, errp)) {
+#ifdef __ANDROID__
+        __android_log_print(ANDROID_LOG_ERROR, "xemu-android",
+                            "vk init stage: buffers failed");
+#endif
+        return;
+    }
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: surfaces");
+#endif
     pgraph_vk_init_surfaces(pg);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: shaders");
+#endif
     pgraph_vk_init_shaders(pg);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: pipelines");
+#endif
     pgraph_vk_init_pipelines(pg);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: textures");
+#endif
     pgraph_vk_init_textures(pg);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: reports");
+#endif
     pgraph_vk_init_reports(pg);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: compute");
+#endif
     pgraph_vk_init_compute(pg);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: display");
+#endif
     pgraph_vk_init_display(pg);
 
     pgraph_vk_update_vertex_ram_buffer(&d->pgraph, 0, d->vram_ptr,
                                    memory_region_size(d->vram));
 
     pgraph_vk_determine_gpu_properties(d);
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: renderer_ready");
+#endif
+
 }
 
 static void pgraph_vk_finalize(NV2AState *d)
@@ -147,7 +202,13 @@ static void pgraph_vk_flush(NV2AState *d)
 static void pgraph_vk_sync(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
+#if HAVE_EXTERNAL_MEMORY
+    if (pg->vk_renderer_state->display.use_external_memory) {
+        pgraph_vk_render_display(pg);
+    }
+#else
     pgraph_vk_render_display(pg);
+#endif
 
     qatomic_set(&d->pgraph.sync_pending, false);
     qemu_event_set(&d->pgraph.sync_complete);
@@ -231,12 +292,17 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     surface->frame_time = pg->frame_time;
 
 #if HAVE_EXTERNAL_MEMORY
-    qemu_event_reset(&d->pgraph.sync_complete);
-    qatomic_set(&pg->sync_pending, true);
-    pfifo_kick(d);
+    if (r->display.use_external_memory) {
+        qemu_event_reset(&d->pgraph.sync_complete);
+        qatomic_set(&pg->sync_pending, true);
+        pfifo_kick(d);
+        qemu_mutex_unlock(&d->pfifo.lock);
+        qemu_event_wait(&d->pgraph.sync_complete);
+        return r->display.gl_texture_id;
+    }
     qemu_mutex_unlock(&d->pfifo.lock);
-    qemu_event_wait(&d->pgraph.sync_complete);
-    return r->display.gl_texture_id;
+    pgraph_vk_wait_for_surface_download(surface);
+    return 0;
 #else
     qemu_mutex_unlock(&d->pfifo.lock);
     pgraph_vk_wait_for_surface_download(surface);

@@ -270,6 +270,12 @@ static bool create_instance(PGRAPHState *pg, Error **errp)
     add_optional_instance_extension_names(pg, available_extensions,
                                           enabled_extension_names);
 
+    const char *const *enabled_instance_extension_names = NULL;
+    if (enabled_extension_names->len > 0) {
+        enabled_instance_extension_names =
+            &g_array_index(enabled_extension_names, const char *, 0);
+    }
+
     fprintf(stderr, "Enabled instance extensions:\n");
     for (int i = 0; i < enabled_extension_names->len; i++) {
         fprintf(stderr, "- %s\n",
@@ -280,8 +286,7 @@ static bool create_instance(PGRAPHState *pg, Error **errp)
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app_info,
         .enabledExtensionCount = enabled_extension_names->len,
-        .ppEnabledExtensionNames =
-            &g_array_index(enabled_extension_names, const char *, 0),
+        .ppEnabledExtensionNames = enabled_instance_extension_names,
     };
 
     enable_validation = g_config.display.vulkan.validation_layers;
@@ -535,6 +540,12 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
     add_optional_device_extension_names(pg, available_extensions,
                                         enabled_extension_names);
 
+    const char *const *enabled_device_extension_names = NULL;
+    if (enabled_extension_names->len > 0) {
+        enabled_device_extension_names =
+            &g_array_index(enabled_extension_names, const char *, 0);
+    }
+
     fprintf(stderr, "Enabled device extensions:\n");
     for (int i = 0; i < enabled_extension_names->len; i++) {
         fprintf(stderr, "- %s\n",
@@ -647,8 +658,7 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
         .pQueueCreateInfos = &queue_create_info,
         .pEnabledFeatures = &r->enabled_physical_device_features,
         .enabledExtensionCount = enabled_extension_names->len,
-        .ppEnabledExtensionNames =
-            &g_array_index(enabled_extension_names, const char *, 0),
+        .ppEnabledExtensionNames = enabled_device_extension_names,
         .pNext = next_struct,
     };
 
@@ -657,12 +667,20 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
         device_create_info.ppEnabledLayerNames = validation_layers;
     }
 
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: vkCreateDevice");
+#endif
     result = vkCreateDevice(r->physical_device, &device_create_info, NULL,
                             &r->device);
     if (result != VK_SUCCESS) {
         error_setg(errp, "Failed to create logical device (%d)", result);
         return false;
     }
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: vkCreateDevice done");
+#endif
 
     vkGetDeviceQueue(r->device, indices.queue_family, 0, &r->queue);
     return true;
@@ -746,21 +764,64 @@ static bool init_allocator(PGRAPHState *pg, Error **errp)
         .pVulkanFunctions = &vulkanFunctions,
     };
 
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: vmaCreateAllocator");
+#endif
     result = vmaCreateAllocator(&create_info, &r->allocator);
     if (result != VK_SUCCESS) {
         error_setg(errp, "vmaCreateAllocator failed");
         return false;
     }
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: vmaCreateAllocator done");
+#endif
 
     return true;
 }
 
 void pgraph_vk_init_instance(PGRAPHState *pg, Error **errp)
 {
-    if (create_instance(pg, errp) &&
-        select_physical_device(pg, errp) &&
-        create_logical_device(pg, errp) &&
-        init_allocator(pg, errp)) {
+    bool ok = false;
+
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: create_instance");
+#endif
+    if (!create_instance(pg, errp)) {
+        goto done;
+    }
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: select_physical_device");
+#endif
+    if (!select_physical_device(pg, errp)) {
+        goto done;
+    }
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: create_logical_device");
+#endif
+    if (!create_logical_device(pg, errp)) {
+        goto done;
+    }
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk init stage: init_allocator");
+#endif
+    if (!init_allocator(pg, errp)) {
+        goto done;
+    }
+
+    ok = true;
+
+done:
+    if (ok) {
+#ifdef __ANDROID__
+        __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                            "vk init stage: complete");
+#endif
         return;
     }
 

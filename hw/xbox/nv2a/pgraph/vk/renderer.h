@@ -285,6 +285,7 @@ typedef struct PGRAPHVkDisplayState {
 
     int width, height;
     int draw_time;
+    bool use_external_memory;
 
     // OpenGL Interop
 #ifdef WIN32
@@ -469,7 +470,7 @@ void pgraph_vk_unref_shader_module(PGRAPHVkState *r, ShaderModuleInfo *info);
 void pgraph_vk_destroy_shader_module(PGRAPHVkState *r, ShaderModuleInfo *info);
 
 // buffer.c
-void pgraph_vk_init_buffers(NV2AState *d);
+bool pgraph_vk_init_buffers(NV2AState *d, Error **errp);
 void pgraph_vk_finalize_buffers(NV2AState *d);
 bool pgraph_vk_buffer_has_space_for(PGRAPHState *pg, int index,
                                     VkDeviceSize size,

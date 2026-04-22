@@ -19,7 +19,26 @@
 
 #include "renderer.h"
 
-static void create_buffer(PGRAPHState *pg, StorageBuffer *buffer)
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
+static const char *const buffer_names[BUFFER_COUNT] = {
+    "BUFFER_STAGING_DST",
+    "BUFFER_STAGING_SRC",
+    "BUFFER_COMPUTE_DST",
+    "BUFFER_COMPUTE_SRC",
+    "BUFFER_INDEX",
+    "BUFFER_INDEX_STAGING",
+    "BUFFER_VERTEX_RAM",
+    "BUFFER_VERTEX_INLINE",
+    "BUFFER_VERTEX_INLINE_STAGING",
+    "BUFFER_UNIFORM",
+    "BUFFER_UNIFORM_STAGING",
+};
+
+static bool create_buffer(PGRAPHState *pg, StorageBuffer *buffer,
+                          const char *name, Error **errp)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
@@ -29,41 +48,75 @@ static void create_buffer(PGRAPHState *pg, StorageBuffer *buffer)
         .usage = buffer->usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
-    VK_CHECK(vmaCreateBuffer(r->allocator, &buffer_create_info,
-                             &buffer->alloc_info, &buffer->buffer,
-                             &buffer->allocation, NULL));
+    VkResult result = vmaCreateBuffer(r->allocator, &buffer_create_info,
+                                      &buffer->alloc_info, &buffer->buffer,
+                                      &buffer->allocation, NULL);
+    if (result != VK_SUCCESS) {
+        error_setg(errp, "Failed to create Vulkan buffer %s (%zu bytes): %d",
+                   name, buffer->buffer_size, result);
+        return false;
+    }
+    return true;
 }
 
 static void destroy_buffer(PGRAPHState *pg, StorageBuffer *buffer)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
+    if (buffer->buffer == VK_NULL_HANDLE && buffer->allocation == VK_NULL_HANDLE) {
+        return;
+    }
     vmaDestroyBuffer(r->allocator, buffer->buffer, buffer->allocation);
     buffer->buffer = VK_NULL_HANDLE;
     buffer->allocation = VK_NULL_HANDLE;
 }
 
-void pgraph_vk_init_buffers(NV2AState *d)
+bool pgraph_vk_init_buffers(NV2AState *d, Error **errp)
 {
     PGRAPHState *pg = &d->pgraph;
     PGRAPHVkState *r = pg->vk_renderer_state;
 
     // FIXME: Profile buffer sizes
 
+    const size_t mib = 1024 * 1024;
+    size_t vram_size = memory_region_size(d->vram);
+    size_t staging_size = vram_size;
+    if (staging_size < (16 * mib)) {
+        staging_size = 16 * mib;
+    }
+    size_t compute_size = vram_size * 2;
+    if (compute_size < (64 * mib)) {
+        compute_size = 64 * mib;
+    }
+#ifdef __ANDROID__
+    if (compute_size > (64 * mib)) {
+        compute_size = 64 * mib;
+    }
+#else
+    if (compute_size > (256 * mib)) {
+        compute_size = 256 * mib;
+    }
+#endif
+
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                        "vk buffer init: vram=%zu staging=%zu compute=%zu",
+                        vram_size, staging_size, compute_size);
+#endif
+
     VmaAllocationCreateInfo host_alloc_create_info = {
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
-                 VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
     };
     VmaAllocationCreateInfo device_alloc_create_info = {
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-        .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
+        .flags = 0,
     };
 
     r->storage_buffers[BUFFER_STAGING_DST] = (StorageBuffer){
         .alloc_info = host_alloc_create_info,
         .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        .buffer_size = 4096 * 4096 * 4,
+        .buffer_size = staging_size,
     };
 
     r->storage_buffers[BUFFER_STAGING_SRC] = (StorageBuffer){
@@ -76,7 +129,7 @@ void pgraph_vk_init_buffers(NV2AState *d)
         .alloc_info = device_alloc_create_info,
         .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        .buffer_size = (1024 * 10) * (1024 * 10) * 8,
+        .buffer_size = compute_size,
     };
 
     r->storage_buffers[BUFFER_COMPUTE_SRC] = (StorageBuffer){
@@ -108,6 +161,10 @@ void pgraph_vk_init_buffers(NV2AState *d)
 
     r->bitmap_size = memory_region_size(d->vram) / 4096;
     r->uploaded_bitmap = bitmap_new(r->bitmap_size);
+    if (!r->uploaded_bitmap) {
+        error_setg(errp, "Failed to allocate uploaded surface bitmap");
+        return false;
+    }
     bitmap_clear(r->uploaded_bitmap, 0, r->bitmap_size);
 
     r->storage_buffers[BUFFER_VERTEX_INLINE] = (StorageBuffer){
@@ -138,7 +195,14 @@ void pgraph_vk_init_buffers(NV2AState *d)
     };
 
     for (int i = 0; i < BUFFER_COUNT; i++) {
-        create_buffer(pg, &r->storage_buffers[i]);
+#ifdef __ANDROID__
+        __android_log_print(ANDROID_LOG_INFO, "xemu-android",
+                            "vk buffer init: create %s size=%zu",
+                            buffer_names[i], r->storage_buffers[i].buffer_size);
+#endif
+        if (!create_buffer(pg, &r->storage_buffers[i], buffer_names[i], errp)) {
+            goto fail;
+        }
     }
 
     // FIXME: Add fallback path for device using host mapped memory
@@ -149,10 +213,32 @@ void pgraph_vk_init_buffers(NV2AState *d)
                              BUFFER_UNIFORM_STAGING };
 
     for (int i = 0; i < ARRAY_SIZE(buffers_to_map); i++) {
-        VK_CHECK(vmaMapMemory(
-            r->allocator, r->storage_buffers[buffers_to_map[i]].allocation,
-            (void **)&r->storage_buffers[buffers_to_map[i]].mapped));
+        int idx = buffers_to_map[i];
+        VkResult result = vmaMapMemory(
+            r->allocator, r->storage_buffers[idx].allocation,
+            (void **)&r->storage_buffers[idx].mapped);
+        if (result != VK_SUCCESS) {
+            error_setg(errp, "Failed to map Vulkan buffer %s (%zu bytes): %d",
+                       buffer_names[idx], r->storage_buffers[idx].buffer_size,
+                       result);
+            goto fail;
+        }
     }
+
+    return true;
+
+fail:
+    for (int i = 0; i < BUFFER_COUNT; i++) {
+        if (r->storage_buffers[i].mapped) {
+            vmaUnmapMemory(r->allocator, r->storage_buffers[i].allocation);
+            r->storage_buffers[i].mapped = NULL;
+        }
+        destroy_buffer(pg, &r->storage_buffers[i]);
+    }
+    g_free(r->uploaded_bitmap);
+    r->uploaded_bitmap = NULL;
+    r->bitmap_size = 0;
+    return false;
 }
 
 void pgraph_vk_finalize_buffers(NV2AState *d)

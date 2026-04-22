@@ -262,7 +262,7 @@ set(XEMU_CORE_DIRS
 
 set(XEMU_CORE_SOURCES "")
 foreach(dir ${XEMU_CORE_DIRS})
-  file(GLOB_RECURSE DIR_SOURCES
+  file(GLOB_RECURSE DIR_SOURCES CONFIGURE_DEPENDS
     "${REPO_ROOT}/${dir}/*.c"
     "${REPO_ROOT}/${dir}/*.cc"
     "${REPO_ROOT}/${dir}/*.cpp"
@@ -270,7 +270,7 @@ foreach(dir ${XEMU_CORE_DIRS})
   list(APPEND XEMU_CORE_SOURCES ${DIR_SOURCES})
 endforeach()
 
-file(GLOB ROOT_SOURCES
+file(GLOB ROOT_SOURCES CONFIGURE_DEPENDS
   "${REPO_ROOT}/*.c"
   "${REPO_ROOT}/*.cc"
   "${REPO_ROOT}/*.cpp"
@@ -375,6 +375,8 @@ list(FILTER XEMU_CORE_SOURCES EXCLUDE REGEX "hw[\\\\/]vfio-user[\\\\/].*\\.c$")
 list(FILTER XEMU_CORE_SOURCES EXCLUDE REGEX "hw[\\\\/]virtio[\\\\/].*\\.c$")
 list(FILTER XEMU_CORE_SOURCES EXCLUDE REGEX "hw[\\\\/]watchdog[\\\\/].*\\.c$")
 list(FILTER XEMU_CORE_SOURCES EXCLUDE REGEX "hw[\\\\/]xbox[\\\\/]chihiro.*\\.c$")
+list(FILTER XEMU_CORE_SOURCES EXCLUDE REGEX "hw[\\\\/]xbox[\\\\/]nv2a[\\\\/]pgraph[\\\\/]gl[\\\\/]gpuprops\\.c$")
+list(FILTER XEMU_CORE_SOURCES EXCLUDE REGEX "hw[\\\\/]xbox[\\\\/]nv2a[\\\\/]pgraph[\\\\/]vk[\\\\/]gpuprops\\.c$")
 if(NOT XEMU_ENABLE_VULKAN)
   list(FILTER XEMU_CORE_SOURCES EXCLUDE REGEX "hw[\\\\/]xbox[\\\\/]nv2a[\\\\/]pgraph[\\\\/]vk[\\\\/].*\\.c$")
 endif()

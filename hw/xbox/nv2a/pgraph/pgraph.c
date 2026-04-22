@@ -402,22 +402,40 @@ static bool attempt_renderer_init(PGRAPHState *pg)
 
 static void init_renderer(PGRAPHState *pg)
 {
-    if (attempt_renderer_init(pg)) {
-        return;  // Success
-    }
-
+    CONFIG_DISPLAY_RENDERER original_renderer = g_config.display.renderer;
     CONFIG_DISPLAY_RENDERER default_renderer = get_default_renderer();
-    if (default_renderer != g_config.display.renderer) {
-        g_config.display.renderer = default_renderer;
-        if (attempt_renderer_init(pg)) {
-            g_autofree gchar *msg = g_strdup_printf(
-                "Switched to default renderer: %s", pg->renderer->name);
-            xemu_queue_notification(msg);
-            return;
+    CONFIG_DISPLAY_RENDERER attempts[CONFIG_DISPLAY_RENDERER__COUNT];
+    int attempt_count = 0;
+
+    attempts[attempt_count++] = original_renderer;
+    if (default_renderer != original_renderer) {
+        attempts[attempt_count++] = default_renderer;
+    }
+    for (int i = 0; i < CONFIG_DISPLAY_RENDERER__COUNT; i++) {
+        CONFIG_DISPLAY_RENDERER renderer = (CONFIG_DISPLAY_RENDERER)i;
+        bool already_added = false;
+        for (int j = 0; j < attempt_count; j++) {
+            if (attempts[j] == renderer) {
+                already_added = true;
+                break;
+            }
+        }
+        if (!already_added && renderers[renderer]) {
+            attempts[attempt_count++] = renderer;
         }
     }
 
-    // FIXME: Try others
+    for (int i = 0; i < attempt_count; i++) {
+        g_config.display.renderer = attempts[i];
+        if (attempt_renderer_init(pg)) {
+            if (attempts[i] != original_renderer) {
+                g_autofree gchar *msg = g_strdup_printf(
+                    "Switched renderer to %s", pg->renderer->name);
+                xemu_queue_notification(msg);
+            }
+            return;
+        }
+    }
 
     fprintf(stderr, "Fatal error: cannot initialize renderer\n");
     exit(1);
