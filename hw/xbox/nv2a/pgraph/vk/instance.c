@@ -227,7 +227,19 @@ static bool create_instance(PGRAPHState *pg, Error **errp)
         return false;
     }
 
+#ifdef __ANDROID__
+    /* Try to use a custom Vulkan driver loaded via adrenotools */
+    extern PFN_vkGetInstanceProcAddr xemu_android_get_vk_proc_addr(void);
+    PFN_vkGetInstanceProcAddr custom_proc = xemu_android_get_vk_proc_addr();
+    if (custom_proc) {
+        volkInitializeCustom(custom_proc);
+        result = VK_SUCCESS;
+    } else {
+        result = volkInitialize();
+    }
+#else
     result = volkInitialize();
+#endif
     if (result != VK_SUCCESS) {
         error_setg(errp, "volkInitialize failed");
         destroy_window(r);
