@@ -490,7 +490,11 @@ const GDBFeature *gdb_find_static_feature(const char *xmlname)
         }
     }
 
+#ifdef __ANDROID__
+    return NULL;
+#else
     g_assert_not_reached();
+#endif
 }
 
 GArray *gdb_get_register_list(CPUState *cpu)
@@ -577,10 +581,12 @@ void gdb_init_cpu(CPUState *cpu)
 
     if (cc->gdb_core_xml_file) {
         feature = gdb_find_static_feature(cc->gdb_core_xml_file);
-        gdb_register_feature(cpu, 0,
-                             cc->gdb_read_register, cc->gdb_write_register,
-                             feature);
-        cpu->gdb_num_regs = cpu->gdb_num_g_regs = feature->num_regs;
+        if (feature) {
+            gdb_register_feature(cpu, 0,
+                                 cc->gdb_read_register, cc->gdb_write_register,
+                                 feature);
+            cpu->gdb_num_regs = cpu->gdb_num_g_regs = feature->num_regs;
+        }
     }
 
     if (cc->gdb_num_core_regs) {
