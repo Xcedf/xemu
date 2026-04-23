@@ -283,3 +283,6 @@ perf:
   cache_shaders:
     type: bool
     default: true
+  cache_code:
+    type: bool
+    default: true
