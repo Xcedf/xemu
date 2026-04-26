@@ -861,6 +861,15 @@ MemAccessCallback *mem_access_callback_insert(CPUState *cpu, MemoryRegion *mr,
     cb->func = func;
     cb->opaque = opaque;
 
+#ifdef XBOX
+    {
+        extern volatile int64_t *xbox_ram_fp_cb_count_ptr;
+        if (xbox_ram_fp_cb_count_ptr) {
+            qatomic_inc(xbox_ram_fp_cb_count_ptr);
+        }
+    }
+#endif
+
     async_safe_run_on_cpu(cpu, do_mem_access_callback_insert,
                           RUN_ON_CPU_HOST_PTR(cb));
 
@@ -880,6 +889,15 @@ static void do_mem_access_callback_remove_by_ref(CPUState *cpu,
 
 void mem_access_callback_remove_by_ref(CPUState *cpu, MemAccessCallback *cb)
 {
+#ifdef XBOX
+    {
+        extern volatile int64_t *xbox_ram_fp_cb_count_ptr;
+        if (xbox_ram_fp_cb_count_ptr) {
+            qatomic_dec(xbox_ram_fp_cb_count_ptr);
+        }
+    }
+#endif
+
     async_safe_run_on_cpu(cpu, do_mem_access_callback_remove_by_ref,
                           RUN_ON_CPU_HOST_PTR(cb));
 
