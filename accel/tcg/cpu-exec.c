@@ -1045,7 +1045,27 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 tb_add_jump(last_tb, tb_exit, tb);
             }
 
+#ifdef XBOX
+            {
+                static uint64_t cpu_heartbeat = 0;
+                cpu_heartbeat++;
+                if (cpu_heartbeat <= 20) {
+                    error_report("[CPU-PRE]  tb#%lu pc=0x%lx size=%d",
+                                 (unsigned long)cpu_heartbeat,
+                                 (unsigned long)pc, tb->size);
+                }
+
+                cpu_loop_exec_tb(cpu, tb, pc, &last_tb, &tb_exit);
+
+                if (cpu_heartbeat <= 20) {
+                    error_report("[CPU-POST] tb#%lu exit=%d last_tb=%p",
+                                 (unsigned long)cpu_heartbeat,
+                                 tb_exit, last_tb);
+                }
+            }
+#else
             cpu_loop_exec_tb(cpu, tb, pc, &last_tb, &tb_exit);
+#endif
 
             /* Try to align the host and virtual clocks
                if the guest is in advance */

@@ -301,6 +301,16 @@ static void pgraph_vk_process_pending(NV2AState *d)
 
 static void pgraph_vk_flip_stall(NV2AState *d)
 {
+	#ifdef XBOX
+    {
+        extern volatile int32_t *xbox_ram_fp_active_ptr;
+        if (xbox_ram_fp_active_ptr &&
+            !qatomic_read(xbox_ram_fp_active_ptr)) {
+            qatomic_set(xbox_ram_fp_active_ptr, 1);
+            error_report("[TLB-FP] activated after first flip");
+        }
+    }
+#endif
     pgraph_vk_finish(&d->pgraph, VK_FINISH_REASON_FLIP_STALL);
     pgraph_vk_debug_frame_terminator();
 }
