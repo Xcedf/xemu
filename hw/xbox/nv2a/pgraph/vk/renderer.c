@@ -19,6 +19,7 @@
 
 #include "hw/xbox/nv2a/nv2a_int.h"
 #include "renderer.h"
+#include "qemu/error-report.h"
 #include "ui/xemu-settings.h"
 
 #include "gloffscreen.h"
@@ -28,6 +29,9 @@
 
 #ifdef __ANDROID__
 #include <android/log.h>
+#define DBG_LOG(...) __android_log_print(ANDROID_LOG_INFO, "xemu-vk-dbg", __VA_ARGS__)
+#else
+#define DBG_LOG(...) fprintf(stderr, __VA_ARGS__)
 #endif
 
 typedef struct {
@@ -311,6 +315,16 @@ static void pgraph_vk_flip_stall(NV2AState *d)
         }
     }
 #endif
+    {
+        static int dbg_flip = 0;
+        if (dbg_flip < 30) {
+            PGRAPHVkState *r = d->pgraph.vk_renderer_state;
+            DBG_LOG("[FLIP] flip_stall: in_cb=%d frame=%d submit=%d",
+                    r->in_command_buffer, r->current_frame,
+                    (int)r->submit_count);
+            dbg_flip++;
+        }
+    }
     pgraph_vk_finish(&d->pgraph, VK_FINISH_REASON_FLIP_STALL);
     pgraph_vk_debug_frame_terminator();
 }
