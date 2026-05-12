@@ -343,10 +343,9 @@ void nv2a_profile_get_vsync_timing_str(char *buf, int bufsize);
 void nv2a_profile_get_surf_timing_str(char *buf, int bufsize);
 void nv2a_profile_get_workload_str(char *buf, int bufsize);
 
-static inline void nv2a_profile_inc_counter(enum NV2A_PROF_COUNTERS_ENUM cnt)
-{
-    g_nv2a_stats.frame_working.counters[cnt] += 1;
-}
+#ifndef NV2A_PERF_LOG
+#define NV2A_PERF_LOG 0
+#endif
 
 /*
  * Fast nanosecond clock for per-frame phase timing.
@@ -366,6 +365,13 @@ static inline int64_t nv2a_clock_ns(void)
 }
 #endif
 
+#if NV2A_PERF_LOG
+
+static inline void nv2a_profile_inc_counter(enum NV2A_PROF_COUNTERS_ENUM cnt)
+{
+    g_nv2a_stats.frame_working.counters[cnt] += 1;
+}
+
 #define NV2A_PHASE_TIMER_BEGIN(phase) \
     int64_t _phase_t0_##phase = qemu_clock_get_ns(QEMU_CLOCK_REALTIME)
 
@@ -373,6 +379,18 @@ static inline int64_t nv2a_clock_ns(void)
     g_nv2a_stats.phase_working.phase##_ns += \
         qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - _phase_t0_##phase; \
 } while (0)
+
+#else /* !NV2A_PERF_LOG */
+
+static inline void nv2a_profile_inc_counter(enum NV2A_PROF_COUNTERS_ENUM cnt)
+{
+    (void)cnt;
+}
+
+#define NV2A_PHASE_TIMER_BEGIN(phase) do { } while (0)
+#define NV2A_PHASE_TIMER_END(phase)  do { } while (0)
+
+#endif /* NV2A_PERF_LOG */
 
 #ifdef CONFIG_RENDERDOC
 void nv2a_dbg_renderdoc_init(void);

@@ -36,6 +36,7 @@ struct OptBisectStats g_opt_stats;
 
 static void opt_stats_log_and_reset(void)
 {
+#if NV2A_PERF_LOG
     static int frame_counter = 0;
     if (++frame_counter % 300 == 0) {
         DBG_LOG("[OPT-STATS] SFP:%d/%d PEX:%d/%d VTC:%d/%d DRS:%d/%d MDI:%d/%d",
@@ -50,6 +51,7 @@ static void opt_stats_log_and_reset(void)
                 g_opt_stats.multi_draw_indirect,
                 g_opt_stats.multi_draw_loop);
     }
+#endif
     memset(&g_opt_stats, 0, sizeof(g_opt_stats));
 }
 
@@ -871,11 +873,11 @@ static void create_pipeline(PGRAPHState *pg)
         pg->shader_state_gen == r->last_shader_state_gen &&
         pg->pipeline_state_gen == r->last_pipeline_state_gen &&
         pg->primitive_mode == r->shader_binding->state.geom.primitive_mode) {
-        g_opt_stats.pipeline_early_hits++;
+        OPT_STAT_INC(pipeline_early_hits);
         NV2A_VK_DGROUP_END();
         return;
     }
-    g_opt_stats.pipeline_early_misses++;
+    OPT_STAT_INC(pipeline_early_misses);
 #endif
 
     NV2A_PHASE_TIMER_BEGIN(pipe_bind_tex);
@@ -1925,12 +1927,12 @@ static void begin_pre_draw(PGRAPHState *pg)
 #if OPT_VALIDATE_GEN_COUNTERS
             assert(!pgraph_has_dirty_regs(pg));
 #endif
-            g_opt_stats.super_fast_hits++;
+            OPT_STAT_INC(super_fast_hits);
             r->pre_draw_skipped = true;
             return;
         }
     }
-    g_opt_stats.super_fast_misses++;
+    OPT_STAT_INC(super_fast_misses);
 #endif
 
 #if OPT_MEDIUM_FAST_PATH
@@ -2895,7 +2897,7 @@ void pgraph_vk_flush_draw(NV2AState *d)
         NV2A_PHASE_TIMER_END(draw_setup);
 		
         NV2A_PHASE_TIMER_BEGIN(draw_vk_cmd);
-        g_opt_stats.multi_draw_loop++;
+        OPT_STAT_INC(multi_draw_loop);
         for (int i = 0; i < pg->draw_arrays_length; i++) {
             uint32_t start = pg->draw_arrays_start[i],
                      count = pg->draw_arrays_count[i];
